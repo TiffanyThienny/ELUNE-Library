@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState } from 'react';
 import type { Book, PageView, ReaderSettings, AudioState, Highlight, ReadingHistoryItem } from '../types';
 import { INITIAL_BOOKS } from '../data/mockBooks';
+import { api } from '../services/api';
 
 interface LibraryContextType {
   books: Book[];
@@ -133,6 +134,32 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [appTheme, setAppTheme] = useState<'light' | 'dark'>('light');
 
+  // Load books & highlights from Backend API on mount
+  React.useEffect(() => {
+    let isMounted = true;
+    api.getBooks({ limit: 50 })
+      .then((res) => {
+        if (isMounted && res?.success && res.data && Array.isArray(res.data.books) && res.data.books.length > 0) {
+          setBooks(res.data.books);
+        }
+      })
+      .catch(() => {
+        // Safe offline fallback: keep mock books
+      });
+
+    api.getHighlights()
+      .then((res) => {
+        if (isMounted && res?.success && res.data && Array.isArray(res.data.highlights) && res.data.highlights.length > 0) {
+          setHighlights(res.data.highlights);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const toggleAppTheme = () => {
     setAppTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
@@ -152,6 +179,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setFavoriteIds(prev => 
       prev.includes(bookId) ? prev.filter(id => id !== bookId) : [...prev, bookId]
     );
+    api.toggleFavorite(bookId).catch(() => {});
   };
 
   const toggleSaveSummary = (bookId: string) => {
@@ -181,10 +209,12 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       createdAt: 'Just now'
     };
     setHighlights(prev => [newHighlight, ...prev]);
+    api.createHighlight(hl).catch(() => {});
   };
 
   const deleteHighlight = (id: string) => {
     setHighlights(prev => prev.filter(h => h.id !== id));
+    api.deleteHighlight(id).catch(() => {});
   };
 
   const updateReaderSettings = (newSettings: Partial<ReaderSettings>) => {
@@ -206,6 +236,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       return b;
     }));
+    api.updateProgress(bookId, chapterIndex, pageNumber, percent).catch(() => {});
   };
 
   // Web Speech Synthesis & Timer Refs

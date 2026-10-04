@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Send, ArrowLeft, User } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
+import { api } from '../services/api';
 
 export const AIBookQAPage: React.FC = () => {
   const { activeBook, navigateTo } = useLibrary();
@@ -22,28 +23,36 @@ export const AIBookQAPage: React.FC = () => {
     'Give me a practical example from the book.'
   ];
 
-  const handleSendQuestion = (questionText: string) => {
+  const handleSendQuestion = async (questionText: string) => {
     if (!questionText.trim()) return;
 
     const userMsg = { id: `m-${Date.now()}`, sender: 'user' as const, text: questionText };
     setMessages(prev => [...prev, userMsg]);
     setInputQuery('');
 
-    // Check preset responses
-    const matchedPreset = book.presetQAs.find(q => 
-      q.question.toLowerCase().includes(questionText.toLowerCase().slice(0, 10))
-    );
-
-    setTimeout(() => {
-      const aiReplyText = matchedPreset 
+    // Fallback answer generator
+    const getFallbackAnswer = () => {
+      const matchedPreset = book.presetQAs.find(q => 
+        q.question.toLowerCase().includes(questionText.toLowerCase().slice(0, 10))
+      );
+      return matchedPreset 
         ? matchedPreset.answer 
         : `In "${book.title}", ${book.author} explores this exact theme: when we focus our internal energy on reason and self-mastery, external challenges transform into material for wisdom.`;
-      
+    };
+
+    try {
+      const res = await api.askBookQuestion(book.id, questionText);
+      const aiReplyText = (res && res.success && res.data?.answer) ? res.data.answer : getFallbackAnswer();
       setMessages(prev => [
         ...prev, 
         { id: `m-${Date.now() + 1}`, sender: 'ai', text: aiReplyText }
       ]);
-    }, 600);
+    } catch {
+      setMessages(prev => [
+        ...prev, 
+        { id: `m-${Date.now() + 1}`, sender: 'ai', text: getFallbackAnswer() }
+      ]);
+    }
   };
 
   return (

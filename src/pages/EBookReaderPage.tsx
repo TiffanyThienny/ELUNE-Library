@@ -14,8 +14,7 @@ import {
   Highlighter,
   Copy,
   Check,
-  Volume2,
-  Headphones
+  Volume2
 } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
 

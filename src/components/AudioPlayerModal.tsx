@@ -5,7 +5,6 @@ import { useLibrary } from '../context/LibraryContext';
 export const AudioPlayerModal: React.FC = () => {
   const { 
     audioState, 
-    closeAudioModal, 
     toggleAudioPlayPause, 
     setAudioSpeed, 
     playAudioTrack, 
