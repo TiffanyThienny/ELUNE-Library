@@ -3,8 +3,8 @@ import { prisma } from '../config/prisma';
 import { storageService } from '../services/storage.service';
 import { documentService } from '../services/document.service';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { Visibility, BookStatus, BlockType } from '@prisma/client';
 
-// Format database book entity into full frontend Book model
 export const formatBookForResponse = (book: any, progress?: any) => {
   let parsedSummary = {
     quickOverview: book.description || '',
@@ -13,7 +13,6 @@ export const formatBookForResponse = (book: any, progress?: any) => {
     importantConcepts: []
   };
 
-  // Find book-level summary if included
   if (book.summaries && book.summaries.length > 0) {
     const bookSummary = book.summaries.find((s: any) => s.summaryType === 'book') || book.summaries[0];
     if (bookSummary && bookSummary.content) {
@@ -27,7 +26,8 @@ export const formatBookForResponse = (book: any, progress?: any) => {
 
   const defaultProgress = progress || (book.readingProgress && book.readingProgress[0]) || {
     currentPage: 1,
-    currentChapter: 0,
+    currentChapterId: null,
+    currentContentBlockId: null,
     progressPercentage: 0,
     lastReadAt: new Date().toISOString()
   };
@@ -36,42 +36,34 @@ export const formatBookForResponse = (book: any, progress?: any) => {
     id: book.id,
     title: book.title,
     author: book.author,
-    category: book.category,
+    category: book.category ? book.category.name : 'General',
+    categoryId: book.categoryId,
     coverBg: book.coverBg || 'linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)',
     coverTextColor: book.coverTextColor || '#FAF0E6',
-    readingTime: book.readingTime || '3 hrs',
-    totalPages: book.totalPages || 100,
-    description: book.description,
-    publicationYear: book.publicationYear || '2026',
-    isUploaded: Boolean(book.uploadedBy),
-    uploadedAt: book.uploadedBy ? new Date(book.createdAt).toLocaleDateString() : undefined,
-    isAudioAvailable: book.isAudioAvailable,
-    audioDuration: book.audioDuration,
-    audioUrl: book.audioUrl,
+    coverUrl: book.coverUrl,
     fileUrl: book.fileUrl,
     fileType: book.fileType,
+    totalPages: book.totalPages || 100,
+    description: book.description,
+    language: book.language || 'en',
+    visibility: book.visibility,
+    status: book.status,
+    rejectionReason: book.rejectionReason,
+    isUploaded: Boolean(book.uploadedBy),
+    uploadedBy: book.uploadedBy,
+    uploaderName: book.uploader ? book.uploader.name : undefined,
+    createdAt: book.createdAt,
     chapters: (book.chapters || []).map((ch: any) => ({
       id: ch.id,
       number: ch.chapterNumber,
       title: ch.title,
-      readingTime: ch.readingTime || '15 mins',
-      summary: ch.summary || '',
-      keyPoints: ch.keyPoints || [],
-      content: ch.content
+      contentBlocksCount: ch._count?.contentBlocks || ch.contentBlocks?.length || 0,
+      contentBlocks: ch.contentBlocks || []
     })),
     summary: parsedSummary,
-    presetQAs: [
-      {
-        question: `What is the main topic of "${book.title}"?`,
-        answer: `${book.title} by ${book.author} delves into ${book.category.toLowerCase()} and cultivating disciplined insight.`
-      },
-      {
-        question: `How can I apply lessons from this book?`,
-        answer: `Reflect on the chapter summaries and implement deliberate contemplation daily.`
-      }
-    ],
     progress: {
-      chapterIndex: defaultProgress.currentChapter || 0,
+      chapterId: defaultProgress.currentChapterId,
+      contentBlockId: defaultProgress.currentContentBlockId,
       pageNumber: defaultProgress.currentPage || 1,
       percent: Math.round(defaultProgress.progressPercentage || 0),
       lastRead: defaultProgress.lastReadAt ? new Date(defaultProgress.lastReadAt).toLocaleDateString() : 'Just now'
@@ -79,17 +71,26 @@ export const formatBookForResponse = (book: any, progress?: any) => {
   };
 };
 
+/**
+ * Explore / Public Books Catalog (Strictly PUBLIC + APPROVED)
+ */
 export const getBooks = async (req: Request, res: Response): Promise<void> => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
     const search = (req.query.search as string)?.trim();
-    const category = (req.query.category as string)?.trim();
+    const categorySlug = (req.query.category as string)?.trim();
+    const author = (req.query.author as string)?.trim();
     const sort = (req.query.sort as string) || 'latest';
 
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    // RULE: Public library strictly shows PUBLIC + APPROVED
+    const where: any = {
+      visibility: Visibility.PUBLIC,
+      status: BookStatus.APPROVED
+    };
+
     if (search) {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
@@ -98,8 +99,17 @@ export const getBooks = async (req: Request, res: Response): Promise<void> => {
       ];
     }
 
-    if (category && category !== 'All') {
-      where.category = { equals: category, mode: 'insensitive' };
+    if (author) {
+      where.author = { contains: author, mode: 'insensitive' };
+    }
+
+    if (categorySlug && categorySlug !== 'all') {
+      where.category = {
+        OR: [
+          { slug: { equals: categorySlug.toLowerCase() } },
+          { name: { contains: categorySlug, mode: 'insensitive' } }
+        ]
+      };
     }
 
     let orderBy: any = { createdAt: 'desc' };
@@ -115,8 +125,10 @@ export const getBooks = async (req: Request, res: Response): Promise<void> => {
         skip,
         take: limit,
         include: {
+          category: true,
+          uploader: { select: { id: true, name: true } },
           chapters: {
-            select: { id: true, chapterNumber: true, title: true, readingTime: true, summary: true, content: true },
+            select: { id: true, chapterNumber: true, title: true, _count: { select: { contentBlocks: true } } },
             orderBy: { chapterNumber: 'asc' }
           },
           summaries: {
@@ -146,7 +158,7 @@ export const getBooks = async (req: Request, res: Response): Promise<void> => {
           totalPages: Math.ceil(total / limit)
         }
       },
-      'Books fetched successfully'
+      'Public books fetched successfully'
     );
   } catch (error: any) {
     console.error('getBooks error:', error);
@@ -154,6 +166,9 @@ export const getBooks = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+/**
+ * Get Book by ID with strict Private Book permission check
+ */
 export const getBookById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -161,7 +176,12 @@ export const getBookById = async (req: Request, res: Response): Promise<void> =>
     const book = await prisma.book.findUnique({
       where: { id },
       include: {
+        category: true,
+        uploader: { select: { id: true, name: true, email: true } },
         chapters: {
+          include: {
+            _count: { select: { contentBlocks: true } }
+          },
           orderBy: { chapterNumber: 'asc' }
         },
         summaries: true,
@@ -179,6 +199,17 @@ export const getBookById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    // CHECK PRIVATE BOOK ACCESS
+    if (book.visibility === Visibility.PRIVATE) {
+      const isOwner = req.user && req.user.id === book.uploadedBy;
+      const isAdmin = req.user && req.user.role === 'ADMIN';
+
+      if (!isOwner && !isAdmin) {
+        sendError(res, 'Access denied. This is a private book accessible only to its owner.', 'FORBIDDEN', 403);
+        return;
+      }
+    }
+
     sendSuccess(res, formatBookForResponse(book), 'Book details retrieved');
   } catch (error: any) {
     console.error('getBookById error:', error);
@@ -186,65 +217,57 @@ export const getBookById = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const createBook = async (req: Request, res: Response): Promise<void> => {
+/**
+ * Get User's Uploaded Books (Private + Public with PENDING / APPROVED / REJECTED status)
+ */
+export const getMyUploads = async (req: Request, res: Response): Promise<void> => {
   try {
-    const {
-      title,
-      author,
-      description,
-      category,
-      coverBg,
-      coverTextColor,
-      readingTime,
-      totalPages,
-      publicationYear,
-      chapters
-    } = req.body;
-
-    if (!title || !author) {
-      sendError(res, 'Title and Author are required', 'VALIDATION_ERROR', 400);
+    if (!req.user) {
+      sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
       return;
     }
 
-    const created = await prisma.book.create({
-      data: {
-        title,
-        author,
-        description: description || `A thoughtful exploration of ${title}`,
-        category: category || 'Self Development',
-        coverBg: coverBg || 'linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)',
-        coverTextColor: coverTextColor || '#FAF0E6',
-        readingTime: readingTime || '3 hrs',
-        totalPages: totalPages || 150,
-        publicationYear: publicationYear || '2026',
-        uploadedBy: req.user?.id || null,
-        chapters: chapters
-          ? {
-              create: chapters.map((ch: any, idx: number) => ({
-                chapterNumber: ch.number || idx + 1,
-                title: ch.title || `Chapter ${idx + 1}`,
-                readingTime: ch.readingTime || '15 mins',
-                summary: ch.summary || '',
-                content: ch.content || ''
-              }))
-            }
-          : undefined
-      },
+    const books = await prisma.book.findMany({
+      where: { uploadedBy: req.user.id },
       include: {
-        chapters: true,
-        summaries: true
-      }
+        category: true,
+        _count: { select: { chapters: true } }
+      },
+      orderBy: { createdAt: 'desc' }
     });
 
-    sendSuccess(res, formatBookForResponse(created), 'Book created successfully', 201);
+    const formatted = books.map((b) => ({
+      id: b.id,
+      title: b.title,
+      author: b.author,
+      description: b.description,
+      category: b.category ? b.category.name : 'General',
+      coverBg: b.coverBg,
+      coverTextColor: b.coverTextColor,
+      visibility: b.visibility,
+      status: b.status,
+      rejectionReason: b.rejectionReason,
+      chaptersCount: b._count.chapters,
+      createdAt: b.createdAt
+    }));
+
+    sendSuccess(res, { books: formatted }, 'My uploaded books retrieved');
   } catch (error: any) {
-    console.error('createBook error:', error);
-    sendError(res, 'Failed to create book', error.message, 500);
+    console.error('getMyUploads error:', error);
+    sendError(res, 'Failed to retrieve uploads', error.message, 500);
   }
 };
 
+/**
+ * Upload Book (Handles file, text extraction, paragraph/content blocks, and PRIVATE/PUBLIC status)
+ */
 export const uploadBook = async (req: Request, res: Response): Promise<void> => {
   try {
+    if (!req.user) {
+      sendError(res, 'Authentication required to upload books', 'UNAUTHORIZED', 401);
+      return;
+    }
+
     const file = req.file;
     if (!file) {
       sendError(res, 'No book file uploaded. Please upload a PDF or EPUB.', 'FILE_REQUIRED', 400);
@@ -262,101 +285,99 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
     }
 
     const title = req.body.title || extracted.title;
-    const author = req.body.author || 'Uploaded Author';
-    const category = req.body.category || 'Self Development';
+    const author = req.body.author || req.user.name;
+    const description = req.body.description || `Uploaded book "${title}" prepared for comfortable reading and AI learning in Elunè.`;
+    const categoryId = req.body.categoryId || null;
+    const requestedVisibility = (req.body.visibility || 'PRIVATE').toUpperCase();
+
+    // RULE:
+    // If PRIVATE -> status = APPROVED (owner only)
+    // If PUBLIC -> status = PENDING (requires admin review)
+    const visibility = requestedVisibility === 'PUBLIC' ? Visibility.PUBLIC : Visibility.PRIVATE;
+    const status = visibility === 'PUBLIC' ? BookStatus.PENDING : BookStatus.APPROVED;
 
     const book = await prisma.book.create({
       data: {
         title,
         author,
-        description:
-          req.body.description ||
-          `Your uploaded book "${title}" is ready for distraction-free reading and AI summaries in Elunè.`,
-        category,
+        description,
+        categoryId,
         coverBg: req.body.coverBg || 'linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)',
         coverTextColor: '#FAF0E6',
         fileUrl,
         fileType: ext,
         totalPages: extracted.totalPages,
-        readingTime: `${Math.max(1, Math.ceil(extracted.totalPages / 35))} hrs`,
-        publicationYear: new Date().getFullYear().toString(),
-        uploadedBy: req.user?.id || null,
+        language: req.body.language || 'en',
+        uploadedBy: req.user.id,
+        visibility,
+        status,
         chapters: {
-          create: extracted.chapters.map((ch) => ({
-            chapterNumber: ch.chapterNumber,
-            title: ch.title,
-            readingTime: ch.readingTime || '15 mins',
-            summary: ch.summary || '',
-            content: ch.content
-          }))
+          create: extracted.chapters.map((ch) => {
+            const paragraphs = ch.content
+              .split(/\n\s*\n/)
+              .map((p) => p.trim())
+              .filter((p) => p.length > 0);
+
+            const contentBlocks = paragraphs.length > 0
+              ? paragraphs.map((paraText, pIdx) => ({
+                  blockIndex: pIdx + 1,
+                  type: BlockType.PARAGRAPH,
+                  text: paraText,
+                  pageNumber: Math.max(1, Math.ceil((pIdx + 1) / 3))
+                }))
+              : [
+                  {
+                    blockIndex: 1,
+                    type: BlockType.PARAGRAPH,
+                    text: ch.content || 'Opening section',
+                    pageNumber: 1
+                  }
+                ];
+
+            return {
+              chapterNumber: ch.chapterNumber,
+              title: ch.title,
+              contentBlocks: {
+                create: contentBlocks
+              }
+            };
+          })
         }
       },
       include: {
-        chapters: true,
-        summaries: true
+        category: true,
+        chapters: {
+          include: {
+            contentBlocks: { take: 5 }
+          }
+        }
       }
     });
 
-    // Also add to user's library if authenticated
-    if (req.user) {
-      await prisma.userBook.upsert({
-        where: {
-          userId_bookId: {
-            userId: req.user.id,
-            bookId: book.id
-          }
-        },
-        update: {},
-        create: {
+    // Auto-add to user's library
+    await prisma.userBook.upsert({
+      where: {
+        userId_bookId: {
           userId: req.user.id,
           bookId: book.id
         }
-      });
-    }
-
-    sendSuccess(res, formatBookForResponse(book), 'Book uploaded and processed successfully', 201);
-  } catch (error: any) {
-    console.error('uploadBook error:', error);
-    sendError(res, 'Failed to process and upload book', error.message, 500);
-  }
-};
-
-export const updateBook = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { title, author, description, category, coverBg } = req.body;
-
-    const existing = await prisma.book.findUnique({ where: { id } });
-    if (!existing) {
-      sendError(res, 'Book not found', 'NOT_FOUND', 404);
-      return;
-    }
-
-    // Only allow update if uploader or admin
-    if (existing.uploadedBy && req.user && existing.uploadedBy !== req.user.id) {
-      sendError(res, 'You do not have permission to edit this book', 'FORBIDDEN', 403);
-      return;
-    }
-
-    const updated = await prisma.book.update({
-      where: { id },
-      data: {
-        title: title || undefined,
-        author: author || undefined,
-        description: description || undefined,
-        category: category || undefined,
-        coverBg: coverBg || undefined
       },
-      include: {
-        chapters: true,
-        summaries: true
+      update: {},
+      create: {
+        userId: req.user.id,
+        bookId: book.id
       }
     });
 
-    sendSuccess(res, formatBookForResponse(updated), 'Book updated successfully');
+    const message =
+      visibility === 'PUBLIC'
+        ? 'Upload successful. Your book has been submitted for admin review.'
+        : 'Upload successful. Your private book is ready in your personal sanctuary.';
+
+    sendSuccess(res, formatBookForResponse(book), message, 201);
   } catch (error: any) {
-    console.error('updateBook error:', error);
-    sendError(res, 'Failed to update book', error.message, 500);
+    console.error('uploadBook error:', error);
+    sendError(res, 'Failed to process and upload book', error.message, 500);
   }
 };
 
@@ -367,6 +388,11 @@ export const deleteBook = async (req: Request, res: Response): Promise<void> => 
 
     if (!existing) {
       sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (existing.uploadedBy !== req.user?.id && req.user?.role !== 'ADMIN') {
+      sendError(res, 'You do not have permission to delete this book', 'FORBIDDEN', 403);
       return;
     }
 

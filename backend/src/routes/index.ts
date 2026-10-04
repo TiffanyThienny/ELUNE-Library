@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import bookRoutes from './book.routes';
+import readerRoutes from './reader.routes';
 import libraryRoutes from './library.routes';
-import progressRoutes from './progress.routes';
 import bookmarkRoutes from './bookmark.routes';
-import highlightRoutes from './highlight.routes';
+import noteRoutes from './note.routes';
+import categoryRoutes from './category.routes';
+import userRoutes from './user.routes';
+import adminRoutes from './admin.routes';
+import audioRoutes from './audio.routes';
 import aiRoutes from './ai.routes';
 import ttsRoutes from './tts.routes';
 
@@ -14,18 +18,22 @@ const router = Router();
 router.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    app: 'Elunè Peaceful Reading Companion API',
-    version: '1.0.0',
+    app: 'Elunè Digital Library & Peaceful Reading Companion API',
+    version: '2.0.0',
     timestamp: new Date().toISOString()
   });
 });
 
 router.use('/auth', authRoutes);
 router.use('/books', bookRoutes);
+router.use('/reader', readerRoutes);
 router.use('/library', libraryRoutes);
-router.use('/books', progressRoutes);
 router.use('/', bookmarkRoutes);
-router.use('/highlights', highlightRoutes);
+router.use('/', noteRoutes);
+router.use('/categories', categoryRoutes);
+router.use('/user', userRoutes);
+router.use('/admin', adminRoutes);
+router.use('/audio', audioRoutes);
 router.use('/ai', aiRoutes);
 router.use('/tts', ttsRoutes);
 

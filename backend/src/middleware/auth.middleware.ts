@@ -3,11 +3,13 @@ import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env';
 import { prisma } from '../config/prisma';
 import { sendError } from '../utils/response.util';
+import { Role } from '@prisma/client';
 
 export interface AuthenticatedUser {
   id: string;
   name: string;
   email: string;
+  role: Role;
 }
 
 declare global {
@@ -36,10 +38,10 @@ export const authenticateJwt = async (
       return;
     }
 
-    const decoded = jwt.verify(token, ENV.JWT_SECRET) as { userId: string };
+    const decoded = jwt.verify(token, ENV.JWT_SECRET) as { userId: string; role?: Role };
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, name: true, email: true }
+      select: { id: true, name: true, email: true, role: true }
     });
 
     if (!user) {
@@ -58,20 +60,35 @@ export const authenticateJwt = async (
   }
 };
 
-// Optional auth for public views that can personalize if token is provided
+export const authorizeRole = (allowedRoles: Role[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
+      return;
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      sendError(res, 'Access denied. You do not have permission to access this resource.', 'FORBIDDEN', 403);
+      return;
+    }
+
+    next();
+  };
+};
+
 export const optionalAuth = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, ENV.JWT_SECRET) as { userId: string };
+      const decoded = jwt.verify(token, ENV.JWT_SECRET) as { userId: string; role?: Role };
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
-        select: { id: true, name: true, email: true }
+        select: { id: true, name: true, email: true, role: true }
       });
       if (user) {
         req.user = user;

@@ -15,6 +15,12 @@ export class RetrievalService {
   async retrieveContextForQuery(bookId: string, query: string, maxTokensApprox = 3000): Promise<string> {
     const chapters = await prisma.chapter.findMany({
       where: { bookId },
+      include: {
+        contentBlocks: {
+          select: { text: true },
+          orderBy: { blockIndex: 'asc' }
+        }
+      },
       orderBy: { chapterNumber: 'asc' }
     });
 
@@ -33,15 +39,15 @@ export class RetrievalService {
     const scoredSnippets: RetrievedContext[] = [];
 
     for (const chapter of chapters) {
+      const chapterText = chapter.contentBlocks.map((b) => b.text).join('\n\n') || chapter.title;
       // Chunk each chapter
-      const chunks = documentService.chunkText(chapter.content, 500, 100);
+      const chunks = documentService.chunkText(chapterText, 500, 100);
 
       chunks.forEach((chunk) => {
         const lowerChunk = chunk.toLowerCase();
         let matchScore = 0;
 
         queryTokens.forEach((token) => {
-          // Count occurrences
           const occurrences = (lowerChunk.match(new RegExp(`\\b${token}\\b`, 'g')) || []).length;
           matchScore += occurrences * 2;
           if (lowerChunk.includes(token)) {
@@ -83,10 +89,11 @@ export class RetrievalService {
       totalWords += wordsInItem;
     }
 
-    // Fallback if no specific keywords matched: provide book overview & first chapter
+    // Fallback if no specific keywords matched: provide first chapter
     if (selectedSnippets.length === 0) {
       const firstCh = chapters[0];
-      return `[Source: Chapter ${firstCh.chapterNumber}: ${firstCh.title}]\n${firstCh.content.slice(0, 3000)}`;
+      const firstText = firstCh.contentBlocks.map((b) => b.text).join('\n\n') || firstCh.title;
+      return `[Source: Chapter ${firstCh.chapterNumber}: ${firstCh.title}]\n${firstText.slice(0, 3000)}`;
     }
 
     return selectedSnippets.join('\n\n---\n\n');
@@ -98,12 +105,19 @@ export class RetrievalService {
   async getChapterContext(chapterId: string): Promise<string> {
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { book: true }
+      include: {
+        book: true,
+        contentBlocks: {
+          select: { text: true },
+          orderBy: { blockIndex: 'asc' }
+        }
+      }
     });
 
     if (!chapter) return '';
 
-    return `Book: ${chapter.book.title} by ${chapter.book.author}\nChapter ${chapter.chapterNumber}: ${chapter.title}\n\n${chapter.content}`;
+    const text = chapter.contentBlocks.map((b) => b.text).join('\n\n');
+    return `Book: ${chapter.book.title} by ${chapter.book.author}\nChapter ${chapter.chapterNumber}: ${chapter.title}\n\n${text}`;
   }
 }
 

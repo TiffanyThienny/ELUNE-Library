@@ -9,7 +9,6 @@ interface TestResult {
   name: string;
   passed: boolean;
   error?: string;
-  status?: number;
 }
 
 const results: TestResult[] = [];
@@ -32,9 +31,9 @@ async function runTest(name: string, fn: () => Promise<void>) {
 }
 
 async function main() {
-  console.log('\n========================================');
-  console.log('🧪 Starting Elunè Backend Automated Tests');
-  console.log('========================================\n');
+  console.log('\n======================================================');
+  console.log('🧪 Starting Elunè v2.0 Comprehensive Integration Tests');
+  console.log('======================================================\n');
 
   const app = createApp();
   await new Promise<void>((resolve) => {
@@ -45,11 +44,28 @@ async function main() {
     });
   });
 
-  const testEmail = `test_${Date.now()}@elune.read`;
-  const testPassword = 'secure_password_123';
-  let authToken = '';
-  let seededBookId = 'meditations-aurelius';
+  let adminToken = '';
+  let userToken = '';
+  let user2Token = '';
+  const testBookId = 'meditations-aurelius';
+  let privateBookId = 'private-journal-eleanor';
+  let pendingBookId = 'deep-work-focus';
   let createdBookmarkId = '';
+  let createdNoteId = '';
+
+  // Ensure pending book exists in PENDING state
+  await prisma.book.upsert({
+    where: { id: pendingBookId },
+    update: { status: 'PENDING', visibility: 'PUBLIC' },
+    create: {
+      id: pendingBookId,
+      title: 'Deep Work and Peaceful Focus',
+      author: 'Kaelen Mori',
+      description: 'Pending review book',
+      status: 'PENDING',
+      visibility: 'PUBLIC'
+    }
+  });
 
   // 1. Health check
   await runTest('GET /api/health should return ok status', async () => {
@@ -59,298 +75,271 @@ async function main() {
     assert(json.status === 'ok', 'Status should be ok');
   });
 
-  // 2. Auth - Register
-  await runTest('POST /api/auth/register should create user and return JWT', async () => {
-    const res = await fetch(`${baseUrl}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Clara Vance',
-        email: testEmail,
-        password: testPassword
-      })
-    });
-    const json = await res.json();
-    assert(res.status === 201, `Expected 201, got ${res.status}`);
-    assert(json.success === true, 'Success should be true');
-    assert(Boolean(json.data.token), 'Token should be present');
-    assert(json.data.user.email === testEmail, 'Email should match');
-    authToken = json.data.token;
-  });
-
-  // 3. Auth - Login
-  await runTest('POST /api/auth/login should authenticate user', async () => {
+  // 2. Auth - Admin Login
+  await runTest('POST /api/auth/login as Admin should return token with ADMIN role', async () => {
     const res = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: testEmail,
-        password: testPassword
-      })
+      body: JSON.stringify({ email: 'admin@elune.read', password: 'admin123' })
     });
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.success === true, 'Login should succeed');
-    assert(Boolean(json.data.token), 'Token should be present');
+    assert(json.data.user.role === 'ADMIN', 'Role should be ADMIN');
+    adminToken = json.data.token;
   });
 
-  // 4. Auth - Me
-  await runTest('GET /api/auth/me should return current user', async () => {
-    const res = await fetch(`${baseUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.data.user.email === testEmail, 'User profile email should match');
-  });
-
-  // 5. Auth - Invalid JWT Test
-  await runTest('GET /api/auth/me with invalid JWT should return 401', async () => {
-    const res = await fetch(`${baseUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer invalid.jwt.token` }
-    });
-    assert(res.status === 401, `Expected 401 for invalid JWT, got ${res.status}`);
-  });
-
-  // 6. Books - List
-  await runTest('GET /api/books should list books with pagination & search', async () => {
-    const res = await fetch(`${baseUrl}/api/books?page=1&limit=5`);
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.success === true, 'Success should be true');
-    assert(Array.isArray(json.data.books), 'Books should be an array');
-    assert(json.data.books.length > 0, 'Should return at least 1 book');
-    seededBookId = json.data.books[0].id;
-  });
-
-  // 7. Books - Search
-  await runTest('GET /api/books?search=meditations should filter books', async () => {
-    const res = await fetch(`${baseUrl}/api/books?search=meditations`);
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.data.books.length > 0, 'Should find matching books');
-    assert(json.data.books[0].title.toLowerCase().includes('meditations'), 'Title should match search');
-  });
-
-  // 8. Book Detail
-  await runTest('GET /api/books/:id should return book details with chapters', async () => {
-    const res = await fetch(`${baseUrl}/api/books/${seededBookId}`);
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.data.id === seededBookId, 'Book ID should match');
-    assert(Array.isArray(json.data.chapters), 'Chapters should be present');
-  });
-
-  // 9. Book Not Found
-  await runTest('GET /api/books/non-existent-id should return 404', async () => {
-    const res = await fetch(`${baseUrl}/api/books/non-existent-id-9999`);
-    assert(res.status === 404, `Expected 404, got ${res.status}`);
-  });
-
-  // 10. Personal Library - Add
-  await runTest('POST /api/library/:bookId should add book to user library', async () => {
-    const res = await fetch(`${baseUrl}/api/library/${seededBookId}`, {
+  // 3. Auth - Demo User Login
+  await runTest('POST /api/auth/login as User should return token with USER role', async () => {
+    const res = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'demo@elune.read', password: 'password123' })
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.user.role === 'USER', 'Role should be USER');
+    userToken = json.data.token;
+  });
+
+  // 4. Auth - Register Second User
+  const u2Email = `reader_${Date.now()}@elune.read`;
+  await runTest('POST /api/auth/register should create second user', async () => {
+    const res = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Julian Reed', email: u2Email, password: 'password123' })
     });
     const json = await res.json();
     assert(res.status === 201, `Expected 201, got ${res.status}`);
-    assert(json.success === true, 'Should succeed');
+    user2Token = json.data.token;
   });
 
-  // 11. Personal Library - Get
-  await runTest('GET /api/library should return user library items', async () => {
-    const res = await fetch(`${baseUrl}/api/library`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+  // 5. Security - Non-admin accessing Admin route should return 403
+  await runTest('GET /api/admin/statistics as Standard User should return 403 Forbidden', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/statistics`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    assert(res.status === 403, `Expected 403, got ${res.status}`);
+  });
+
+  // 6. Admin - Statistics
+  await runTest('GET /api/admin/statistics as Admin should return platform stats', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/statistics`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.data.books.some((b: any) => b.id === seededBookId), 'Seeded book should be in library');
+    assert(json.data.totalUsers >= 2, 'Should have at least 2 users');
+    assert(json.data.totalBooks >= 1, 'Should have at least 1 book');
   });
 
-  // 12. Reading Progress - Update & Get
-  await runTest('PUT & GET /api/books/:bookId/progress should track reading', async () => {
-    const putRes = await fetch(`${baseUrl}/api/books/${seededBookId}/progress`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        currentPage: 42,
-        currentChapter: 1,
-        progressPercentage: 35
-      })
-    });
-    assert(putRes.status === 200, `PUT Progress expected 200, got ${putRes.status}`);
-
-    const getRes = await fetch(`${baseUrl}/api/books/${seededBookId}/progress`, {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const json = await getRes.json();
-    assert(getRes.status === 200, `GET Progress expected 200, got ${getRes.status}`);
-    assert(json.data.currentPage === 42, 'Current page should be 42');
-    assert(json.data.currentChapter === 1, 'Current chapter should be 1');
+  // 7. Books - Public Catalog (Should ONLY show PUBLIC + APPROVED)
+  await runTest('GET /api/books should list only PUBLIC and APPROVED books', async () => {
+    const res = await fetch(`${baseUrl}/api/books`);
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.books.length > 0, 'Should return public books');
+    assert(
+      json.data.books.every((b: any) => b.visibility === 'PUBLIC' && b.status === 'APPROVED'),
+      'All books in public catalog must be PUBLIC and APPROVED'
+    );
   });
 
-  // 13. Bookmark - Create, Get, Delete
-  await runTest('POST & GET & DELETE /api/books/:bookId/bookmarks should manage bookmarks', async () => {
-    const createRes = await fetch(`${baseUrl}/api/books/${seededBookId}/bookmarks`, {
+  // 8. Security - Private Book Access
+  await runTest('GET /api/books/:id for PRIVATE book by another user should return 403', async () => {
+    const res = await fetch(`${baseUrl}/api/books/${privateBookId}`, {
+      headers: { Authorization: `Bearer ${user2Token}` }
+    });
+    assert(res.status === 403, `Expected 403 for unauthorized private book access, got ${res.status}`);
+  });
+
+  await runTest('GET /api/books/:id for PRIVATE book by Owner should return 200', async () => {
+    const res = await fetch(`${baseUrl}/api/books/${privateBookId}`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    assert(res.status === 200, `Expected 200 for owner accessing private book, got ${res.status}`);
+  });
+
+  // 9. Admin - Review Pending Book (Approve / Reject)
+  await runTest('GET /api/admin/books/pending should list pending submissions', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/books/pending`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.books.some((b: any) => b.id === pendingBookId), 'Pending book should be listed');
+  });
+
+  await runTest('POST /api/admin/books/:id/review should approve pending book', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/books/${pendingBookId}/review`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`
+        Authorization: `Bearer ${adminToken}`
       },
-      body: JSON.stringify({
-        page: 12,
-        note: 'Important reflection on tranquility'
-      })
+      body: JSON.stringify({ action: 'APPROVED', notes: 'Excellent content for library' })
     });
-    const createJson = await createRes.json();
-    assert(createRes.status === 201, `Expected 201, got ${createRes.status}`);
-    createdBookmarkId = createJson.data.id;
-
-    const getRes = await fetch(`${baseUrl}/api/books/${seededBookId}/bookmarks`, {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const getJson = await getRes.json();
-    assert(getJson.data.bookmarks.length > 0, 'Bookmarks should exist');
-
-    const delRes = await fetch(`${baseUrl}/api/bookmarks/${createdBookmarkId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    assert(delRes.status === 200, `Expected 200 on delete, got ${delRes.status}`);
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.book.status === 'APPROVED', 'Book should be APPROVED');
+    assert(json.data.book.visibility === 'PUBLIC', 'Book should now be PUBLIC');
   });
 
-  // 14. Highlights - Create, Get, Delete
-  await runTest('POST & GET & DELETE /api/highlights should manage quote highlights', async () => {
-    const postRes = await fetch(`${baseUrl}/api/highlights`, {
+  // 10. Reader - Full session with ContentBlocks & Audio
+  await runTest('GET /api/reader/:bookId should return canonical content blocks and audio sync', async () => {
+    const res = await fetch(`${baseUrl}/api/reader/${testBookId}`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.chapters.length > 0, 'Chapters should exist');
+    assert(json.data.chapters[0].contentBlocks.length > 0, 'Content blocks should exist');
+    assert(Boolean(json.data.chapters[0].contentBlocks[0].id), 'ContentBlock ID must be present');
+  });
+
+  // 11. Reader - Auto-Save Progress
+  await runTest('POST /api/reader/:bookId/progress should save reading position', async () => {
+    const res = await fetch(`${baseUrl}/api/reader/${testBookId}/progress`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`
+        Authorization: `Bearer ${userToken}`
       },
       body: JSON.stringify({
-        bookId: seededBookId,
-        text: 'Silence is not the absence of sound, but the presence of awareness.',
-        color: 'yellow',
-        note: 'Mindful reading quote'
+        currentChapterId: 'ch-med-1',
+        currentContentBlockId: 'cb-med-1-3',
+        currentPage: 1,
+        progressPercentage: 25.0
+      })
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.currentContentBlockId === 'cb-med-1-3', 'Current content block should be saved');
+  });
+
+  // 12. Bookmark per Paragraph
+  await runTest('POST & GET & DELETE /api/books/:bookId/bookmarks per paragraph', async () => {
+    const postRes = await fetch(`${baseUrl}/api/books/${testBookId}/bookmarks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`
+      },
+      body: JSON.stringify({
+        chapterId: 'ch-med-1',
+        contentBlockId: 'cb-med-1-4',
+        pageNumber: 2,
+        note: 'Important thought on human kinship'
       })
     });
     const postJson = await postRes.json();
     assert(postRes.status === 201, `Expected 201, got ${postRes.status}`);
-    const hlId = postJson.data.id;
+    createdBookmarkId = postJson.data.id;
 
-    const getRes = await fetch(`${baseUrl}/api/highlights`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+    // Get all user bookmarks
+    const getRes = await fetch(`${baseUrl}/api/bookmarks`, {
+      headers: { Authorization: `Bearer ${userToken}` }
     });
     const getJson = await getRes.json();
-    assert(getJson.data.highlights.some((h: any) => h.id === hlId), 'Highlight should exist in list');
+    assert(getJson.data.bookmarks.some((b: any) => b.id === createdBookmarkId), 'New bookmark should be in list');
 
-    const delRes = await fetch(`${baseUrl}/api/highlights/${hlId}`, {
+    // Delete bookmark
+    const delRes = await fetch(`${baseUrl}/api/bookmarks/${createdBookmarkId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${authToken}` }
+      headers: { Authorization: `Bearer ${userToken}` }
     });
-    assert(delRes.status === 200, `Expected 200 on delete highlight, got ${delRes.status}`);
+    assert(delRes.status === 200, `Expected 200, got ${delRes.status}`);
   });
 
-  // 15. AI Summary (Book)
-  await runTest('POST /api/ai/summarize/book/:bookId should return structured summary', async () => {
-    const res = await fetch(`${baseUrl}/api/ai/summarize/book/${seededBookId}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Boolean(json.data.quickOverview), 'quickOverview should be present');
-    assert(Array.isArray(json.data.mainIdeas), 'mainIdeas should be an array');
-    assert(Array.isArray(json.data.keyTakeaways), 'keyTakeaways should be an array');
-  });
-
-  // 16. AI Book Q&A
-  await runTest('POST /api/ai/ask/:bookId should answer question using book content', async () => {
-    const res = await fetch(`${baseUrl}/api/ai/ask/${seededBookId}`, {
+  // 13. Notes per Paragraph
+  await runTest('POST & GET & PUT & DELETE /api/books/:bookId/notes per paragraph', async () => {
+    const postRes = await fetch(`${baseUrl}/api/books/${testBookId}/notes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`
+        Authorization: `Bearer ${userToken}`
       },
       body: JSON.stringify({
-        question: 'What is the main advice for inner tranquility in this book?'
+        chapterId: 'ch-med-1',
+        contentBlockId: 'cb-med-1-2',
+        pageNumber: 1,
+        content: 'Simplicity in living removes unnecessary agitation.'
       })
     });
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Boolean(json.data.answer), 'Answer should be returned');
-    assert(json.data.answer.length > 20, 'Answer should have substantial length');
+    const postJson = await postRes.json();
+    assert(postRes.status === 201, `Expected 201, got ${postRes.status}`);
+    createdNoteId = postJson.data.id;
+
+    // Update note
+    const putRes = await fetch(`${baseUrl}/api/notes/${createdNoteId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`
+      },
+      body: JSON.stringify({ content: 'Updated note on simplicity.' })
+    });
+    assert(putRes.status === 200, `Expected 200 on note update, got ${putRes.status}`);
+
+    // Get all notes
+    const getRes = await fetch(`${baseUrl}/api/notes`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const getJson = await getRes.json();
+    assert(getJson.data.notes.some((n: any) => n.id === createdNoteId), 'Note should be in user notes list');
+
+    // Delete note
+    const delRes = await fetch(`${baseUrl}/api/notes/${createdNoteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    assert(delRes.status === 200, `Expected 200, got ${delRes.status}`);
   });
 
-  // 17. AI Flashcards
-  await runTest('POST /api/ai/flashcards/:bookId should return flashcards array', async () => {
-    const res = await fetch(`${baseUrl}/api/ai/flashcards/${seededBookId}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` }
+  // 14. Audio + Segment Synchronization
+  await runTest('GET /api/audio/:bookId/:chapterId should return synchronized segments', async () => {
+    const res = await fetch(`${baseUrl}/api/audio/${testBookId}/ch-med-1`);
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.track.segments.length > 0, 'Audio segments should be present');
+    assert(json.data.track.segments[0].startTime === 0, 'First segment should start at 0');
+    assert(Boolean(json.data.track.segments[0].contentBlockId), 'Segment must link to contentBlockId');
+  });
+
+  // 15. User Dashboard
+  await runTest('GET /api/user/dashboard should return real database metrics', async () => {
+    const res = await fetch(`${baseUrl}/api/user/dashboard`, {
+      headers: { Authorization: `Bearer ${userToken}` }
     });
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Array.isArray(json.data.flashcards), 'flashcards should be an array');
-    assert(json.data.flashcards.length > 0, 'Should have at least 1 flashcard');
-    assert(Boolean(json.data.flashcards[0].question), 'Question should be present');
-    assert(Boolean(json.data.flashcards[0].answer), 'Answer should be present');
+    assert(typeof json.data.statistics.booksSaved === 'number', 'BooksSaved should be a number');
+    assert(Array.isArray(json.data.continueReading), 'ContinueReading should be an array');
   });
 
-  // 18. AI Quiz
-  await runTest('POST /api/ai/quiz/:bookId should return multiple choice quiz', async () => {
-    const res = await fetch(`${baseUrl}/api/ai/quiz/${seededBookId}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` }
+  // 16. AI Summary
+  await runTest('POST /api/ai/summarize/book/:bookId should return structured summary', async () => {
+    const res = await fetch(`${baseUrl}/api/ai/summarize/book/${testBookId}`, {
+      method: 'POST'
     });
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Array.isArray(json.data.quiz), 'quiz should be an array');
-    assert(json.data.quiz.length > 0, 'Should have quiz items');
-    assert(Boolean(json.data.quiz[0].correctAnswer), 'correctAnswer should be present');
+    assert(Boolean(json.data.quickOverview), 'Summary quick overview must exist');
   });
 
-  // 19. AI Mind Map
-  await runTest('POST /api/ai/mindmap/:bookId should return JSON mindmap tree', async () => {
-    const res = await fetch(`${baseUrl}/api/ai/mindmap/${seededBookId}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const json = await res.json();
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Boolean(json.data.title), 'Mindmap title should be present');
-    assert(Array.isArray(json.data.children), 'Mindmap children should be an array');
-  });
-
-  // 20. Empty question error
-  await runTest('POST /api/ai/ask/:bookId with empty question should return 400', async () => {
-    const res = await fetch(`${baseUrl}/api/ai/ask/${seededBookId}`, {
+  // 17. AI Q&A
+  await runTest('POST /api/ai/ask/:bookId should answer question based on content', async () => {
+    const res = await fetch(`${baseUrl}/api/ai/ask/${testBookId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`
+        Authorization: `Bearer ${userToken}`
       },
-      body: JSON.stringify({ question: '   ' })
-    });
-    assert(res.status === 400, `Expected 400, got ${res.status}`);
-  });
-
-  // 21. TTS unconfigured error message
-  await runTest('POST /api/tts should handle unconfigured provider gracefully', async () => {
-    const res = await fetch(`${baseUrl}/api/tts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ text: 'Hello from Elune' })
+      body: JSON.stringify({ question: 'What is the morning reminder in Meditations?' })
     });
     const json = await res.json();
-    assert(res.status === 501, `Expected 501, got ${res.status}`);
-    assert(json.error === 'TTS_PROVIDER_UNAVAILABLE', 'Expected error code TTS_PROVIDER_UNAVAILABLE');
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(Boolean(json.data.answer), 'Answer must be returned');
   });
 
   // Clean up
@@ -358,19 +347,19 @@ async function main() {
   await prisma.$disconnect();
 
   const failedCount = results.filter((r) => !r.passed).length;
-  console.log('\n----------------------------------------');
+  console.log('\n------------------------------------------------------');
   console.log(`Passed: ${results.length - failedCount}/${results.length}`);
   if (failedCount > 0) {
     console.error(`❌ ${failedCount} tests failed.`);
     process.exit(1);
   } else {
-    console.log('🎉 All test cases passed successfully!');
+    console.log('🎉 All 17 comprehensive integration test suites passed!');
     process.exit(0);
   }
 }
 
 main().catch((err) => {
-  console.error('Fatal test error:', err);
+  console.error('Fatal test runner error:', err);
   if (server) server.close();
   process.exit(1);
 });

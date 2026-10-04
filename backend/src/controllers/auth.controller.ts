@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/prisma';
 import { ENV } from '../config/env';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { Role } from '@prisma/client';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -35,18 +36,20 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         name: name.trim(),
         email: normalizedEmail,
         passwordHash,
+        role: Role.USER,
         avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`
       },
       select: {
         id: true,
         name: true,
         email: true,
+        role: true,
         avatar: true,
         createdAt: true
       }
     });
 
-    const token = jwt.sign({ userId: user.id }, ENV.JWT_SECRET, {
+    const token = jwt.sign({ userId: user.id, role: user.role }, ENV.JWT_SECRET, {
       expiresIn: (ENV.JWT_EXPIRES_IN || '7d') as any
     });
 
@@ -87,7 +90,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = jwt.sign({ userId: user.id }, ENV.JWT_SECRET, {
+    const token = jwt.sign({ userId: user.id, role: user.role }, ENV.JWT_SECRET, {
       expiresIn: (ENV.JWT_EXPIRES_IN || '7d') as any
     });
 
@@ -95,6 +98,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       id: user.id,
       name: user.name,
       email: user.email,
+      role: user.role,
       avatar: user.avatar,
       createdAt: user.createdAt
     };
@@ -124,14 +128,16 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
         id: true,
         name: true,
         email: true,
+        role: true,
         avatar: true,
         createdAt: true,
         _count: {
           select: {
             userBooks: true,
             readingProgress: true,
-            highlights: true,
-            bookmarks: true
+            notes: true,
+            bookmarks: true,
+            uploadedBooks: true
           }
         }
       }
@@ -147,4 +153,8 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
     console.error('GetMe error:', error);
     sendError(res, 'Failed to fetch user profile', error.message, 500);
   }
+};
+
+export const logout = async (_req: Request, res: Response): Promise<void> => {
+  sendSuccess(res, {}, 'Logged out successfully');
 };

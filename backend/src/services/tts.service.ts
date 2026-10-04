@@ -73,7 +73,7 @@ export class TTSService {
 
     // Save generated audio record if bookId is provided
     if (req.bookId) {
-      await prisma.audio.create({
+      await prisma.audioTrack.create({
         data: {
           userId: req.userId || null,
           bookId: req.bookId,

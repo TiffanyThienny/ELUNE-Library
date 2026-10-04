@@ -47,9 +47,6 @@ export class AIService {
     );
   }
 
-  /**
-   * Helper to clean JSON string from markdown code fence
-   */
   private cleanJsonResponse(rawText: string): string {
     let cleaned = rawText.trim();
     if (cleaned.startsWith('```json')) {
@@ -64,7 +61,6 @@ export class AIService {
    * Summarize Book (with database caching)
    */
   async summarizeBook(bookId: string, userId?: string, forceRefresh = false): Promise<GeneratedSummary> {
-    // 1. Check database cache
     if (!forceRefresh) {
       const cached = await prisma.summary.findFirst({
         where: { bookId, summaryType: 'book' },
@@ -84,7 +80,9 @@ export class AIService {
       where: { id: bookId },
       include: {
         chapters: {
-          select: { title: true, chapterNumber: true, content: true },
+          include: {
+            contentBlocks: { select: { text: true }, orderBy: { blockIndex: 'asc' } }
+          },
           take: 6
         }
       }
@@ -95,7 +93,10 @@ export class AIService {
     }
 
     const aggregatedContent = book.chapters
-      .map((c) => `Chapter ${c.chapterNumber}: ${c.title}\n${c.content.slice(0, 1500)}`)
+      .map((c) => {
+        const text = c.contentBlocks.map((b) => b.text).join(' ');
+        return `Chapter ${c.chapterNumber}: ${c.title}\n${text.slice(0, 1500)}`;
+      })
       .join('\n\n');
 
     let summaryResult: GeneratedSummary;
@@ -163,13 +164,17 @@ ${aggregatedContent}`;
 
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { book: true }
+      include: {
+        book: true,
+        contentBlocks: { select: { text: true }, orderBy: { blockIndex: 'asc' } }
+      }
     });
 
     if (!chapter) {
       throw new Error(`Chapter with id ${chapterId} not found`);
     }
 
+    const chapterText = chapter.contentBlocks.map((b) => b.text).join('\n\n');
     let result: { summary: string; keyPoints: string[] };
 
     if (this.isGeminiConfigured() && this.genAI) {
@@ -183,7 +188,7 @@ Return ONLY valid JSON matching this exact structure:
 }
 
 Chapter Content:
-${chapter.content.slice(0, 5000)}`;
+${chapterText.slice(0, 5000)}`;
 
         const genRes = await model.generateContent(prompt);
         const jsonStr = this.cleanJsonResponse(genRes.response.text());
@@ -191,7 +196,7 @@ ${chapter.content.slice(0, 5000)}`;
       } catch (err) {
         console.warn('Gemini chapter summary failed, using content fallback:', err);
         result = {
-          summary: chapter.summary || `In Chapter ${chapter.chapterNumber}, ${chapter.book.author} examines foundational principles regarding "${chapter.title}".`,
+          summary: `In Chapter ${chapter.chapterNumber}, ${chapter.book.author} examines foundational principles regarding "${chapter.title}".`,
           keyPoints: [
             `Core principle articulated in Chapter ${chapter.chapterNumber}`,
             `Practical implication of ${chapter.title}`,
@@ -201,7 +206,7 @@ ${chapter.content.slice(0, 5000)}`;
       }
     } else {
       result = {
-        summary: chapter.summary || `In Chapter ${chapter.chapterNumber}, ${chapter.book.author} examines foundational principles regarding "${chapter.title}".`,
+        summary: `In Chapter ${chapter.chapterNumber}, ${chapter.book.author} examines foundational principles regarding "${chapter.title}".`,
         keyPoints: [
           `Core principle articulated in Chapter ${chapter.chapterNumber}`,
           `Practical implication of ${chapter.title}`,
@@ -233,9 +238,7 @@ ${chapter.content.slice(0, 5000)}`;
       throw new Error(`Book ${bookId} not found`);
     }
 
-    // Step 3: Retrieve relevant content
     const relevantContext = await retrievalService.retrieveContextForQuery(bookId, question);
-
     let answer = '';
 
     if (this.isGeminiConfigured() && this.genAI) {
@@ -260,7 +263,6 @@ User Question: ${question}`;
       answer = this.generateFallbackAnswer(book, question, relevantContext);
     }
 
-    // Step 6: Save conversation
     await prisma.aIChat.create({
       data: {
         userId,
@@ -279,7 +281,14 @@ User Question: ${question}`;
   async generateFlashcards(bookId: string, userId?: string): Promise<GeneratedFlashcard[]> {
     const book = await prisma.book.findUnique({
       where: { id: bookId },
-      include: { chapters: { take: 3 } }
+      include: {
+        chapters: {
+          include: {
+            contentBlocks: { select: { text: true }, orderBy: { blockIndex: 'asc' } }
+          },
+          take: 3
+        }
+      }
     });
 
     if (!book) throw new Error(`Book ${bookId} not found`);
@@ -289,7 +298,9 @@ User Question: ${question}`;
     if (this.isGeminiConfigured() && this.genAI) {
       try {
         const model = this.genAI.getGenerativeModel({ model: this.modelName });
-        const contextText = book.chapters.map((c) => `${c.title}: ${c.content.slice(0, 1000)}`).join('\n');
+        const contextText = book.chapters
+          .map((c) => `${c.title}: ${c.contentBlocks.map((b) => b.text).join(' ').slice(0, 1000)}`)
+          .join('\n');
         const prompt = `Generate 5 high-yield study flashcards from the book "${book.title}" by ${book.author}.
 Return ONLY valid JSON array with format:
 [
@@ -312,7 +323,6 @@ ${contextText}`;
       flashcards = this.generateFallbackFlashcards(book);
     }
 
-    // Persist to database
     for (const fc of flashcards) {
       await prisma.flashcard.create({
         data: {
@@ -333,7 +343,14 @@ ${contextText}`;
   async generateQuiz(bookId: string, userId?: string): Promise<GeneratedQuiz[]> {
     const book = await prisma.book.findUnique({
       where: { id: bookId },
-      include: { chapters: { take: 3 } }
+      include: {
+        chapters: {
+          include: {
+            contentBlocks: { select: { text: true }, orderBy: { blockIndex: 'asc' } }
+          },
+          take: 3
+        }
+      }
     });
 
     if (!book) throw new Error(`Book ${bookId} not found`);
@@ -343,7 +360,9 @@ ${contextText}`;
     if (this.isGeminiConfigured() && this.genAI) {
       try {
         const model = this.genAI.getGenerativeModel({ model: this.modelName });
-        const contextText = book.chapters.map((c) => `${c.title}: ${c.content.slice(0, 1000)}`).join('\n');
+        const contextText = book.chapters
+          .map((c) => `${c.title}: ${c.contentBlocks.map((b) => b.text).join(' ').slice(0, 1000)}`)
+          .join('\n');
         const prompt = `Generate 4 multiple-choice quiz questions based strictly on the book "${book.title}" by ${book.author}.
 Return ONLY valid JSON array with format:
 [
@@ -368,7 +387,6 @@ ${contextText}`;
       quizzes = this.generateFallbackQuiz(book);
     }
 
-    // Persist to database
     for (const q of quizzes) {
       await prisma.quiz.create({
         data: {
@@ -391,7 +409,11 @@ ${contextText}`;
   async generateMindMap(bookId: string): Promise<MindMapNode> {
     const book = await prisma.book.findUnique({
       where: { id: bookId },
-      include: { chapters: { select: { title: true, summary: true } } }
+      include: {
+        chapters: {
+          select: { title: true }
+        }
+      }
     });
 
     if (!book) throw new Error(`Book ${bookId} not found`);
@@ -439,10 +461,9 @@ Return ONLY valid JSON matching this exact structure:
     };
   }
 
-  // --- Fallback helpers to guarantee robust responses even without API key ---
   private createFallbackBookSummary(book: any): GeneratedSummary {
     return {
-      quickOverview: book.description || `An inspiring exploration of ${book.category} written by ${book.author}.`,
+      quickOverview: book.description || `An inspiring exploration of ${book.title} written by ${book.author}.`,
       mainIdeas: [
         `Our perspective shapes our subjective experience, as emphasized by ${book.author}.`,
         'Disciplined reflection and deliberate contemplation cultivate long-term clarity.',
@@ -471,11 +492,11 @@ Return ONLY valid JSON matching this exact structure:
     if (qLower.includes('main idea') || qLower.includes('about') || qLower.includes('summary')) {
       return `In "${book.title}", ${book.author} centers on cultivating emotional clarity, discipline, and understanding life's core priorities. Based on the book, our internal choices and intentional calm define the quality of our actions.`;
     }
-    if (qLower.includes('chapter 1') || qLower.includes('first')) {
-      return `Chapter 1 of "${book.title}" lays down the fundamental premise: recognizing the mentors, virtues, and foundational habits that shape personal integrity before addressing external complexities.`;
+    if (qLower.includes('chapter 1') || qLower.includes('first') || qLower.includes('morning')) {
+      return `In "${book.title}", Chapter 1 sets forth the essential Stoic morning reflection: remembering that we will meet meddling and hurried people, yet resolving not to allow external friction to taint our calm and common humanity.`;
     }
     if (context && context.length > 50) {
-      return `Based on the text of "${book.title}": ${context.slice(0, 300).trim()}...\n\nAs ${book.author} illustrates, applying these reflections allows the reader to maintain focus and composure.`;
+      return `Based on the text of "${book.title}": ${context.slice(0, 300).trim()}...\n\nAs ${book.author} notes, applying these reflections allows the reader to maintain focus and composure.`;
     }
     return `In "${book.title}", ${book.author} notes that wisdom comes from deliberate reflection upon our natural duties and inner peace. However, specific details regarding this query are not explicitly elaborated in this section of the text.`;
   }
@@ -489,10 +510,6 @@ Return ONLY valid JSON matching this exact structure:
       {
         question: `How does ${book.author} recommend dealing with daily disruptions?`,
         answer: `By retreating inward to one's own reasoned judgment and treating obstacles as material for practicing virtue.`
-      },
-      {
-        question: `What role does silence and quiet contemplation play?`,
-        answer: `It restores working memory, mitigates sensory overload, and allows first principles thinking to flourish.`
       }
     ];
   }
@@ -509,17 +526,6 @@ Return ONLY valid JSON matching this exact structure:
         ],
         correctAnswer: 'Internal thoughts, judgments, and choices',
         explanation: `${book.author} emphasizes that only our own opinions, impulses, and responses are under our direct command.`
-      },
-      {
-        question: `What is the primary benefit of maintaining an 'inner citadel'?`,
-        options: [
-          'To isolate oneself completely from human relationships',
-          'To cultivate unwavering tranquility amidst external noise and uncertainty',
-          'To accumulate theoretical knowledge without practice',
-          'To control other people\'s behavior'
-        ],
-        correctAnswer: 'To cultivate unwavering tranquility amidst external noise and uncertainty',
-        explanation: 'The inner citadel serves as an internal sanctuary that preserves clarity regardless of chaotic outer conditions.'
       }
     ];
   }

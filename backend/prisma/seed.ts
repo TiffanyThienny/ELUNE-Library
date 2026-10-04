@@ -1,235 +1,440 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role, Visibility, BookStatus, BlockType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding initial data into Elunè database...');
+  console.log('Seeding Elunè database with Admin, Users, Categories, ContentBlocks, and AudioSegments...');
 
-  // 1. Create default demo user
-  const passwordHash = await bcrypt.hash('password123', 10);
+  // 1. Categories
+  const categoriesData = [
+    { name: 'Philosophy', slug: 'philosophy', description: 'Ancient and modern philosophical inquiries into ethics and mind.' },
+    { name: 'Psychology', slug: 'psychology', description: 'Cognitive science, mindfulness, and mental sanctuaries.' },
+    { name: 'Self Development', slug: 'self-development', description: 'Actionable frameworks for calm, deep work, and discipline.' },
+    { name: 'Technology', slug: 'technology', description: 'AI, computing, and the ethics of digital innovation.' },
+    { name: 'Literature', slug: 'literature', description: 'Classic and contemporary literary explorations.' }
+  ];
+
+  for (const cat of categoriesData) {
+    await prisma.category.upsert({
+      where: { slug: cat.slug },
+      update: {},
+      create: cat
+    });
+  }
+
+  const philosophyCat = await prisma.category.findUnique({ where: { slug: 'philosophy' } });
+  const psychologyCat = await prisma.category.findUnique({ where: { slug: 'psychology' } });
+  const selfDevCat = await prisma.category.findUnique({ where: { slug: 'self-development' } });
+
+  // 2. Users (Admin + Standard User + Demo User)
+  const adminPassword = await bcrypt.hash('admin123', 10);
+  const userPassword = await bcrypt.hash('user123', 10);
+  const demoPassword = await bcrypt.hash('password123', 10);
+
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@elune.read' },
+    update: { role: Role.ADMIN },
+    create: {
+      id: 'usr_admin',
+      name: 'Elunè Administrator',
+      email: 'admin@elune.read',
+      passwordHash: adminPassword,
+      role: Role.ADMIN,
+      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80'
+    }
+  });
+
   const demoUser = await prisma.user.upsert({
     where: { email: 'demo@elune.read' },
-    update: {},
+    update: { role: Role.USER },
     create: {
       id: 'usr_demo_eleanor',
       name: 'Eleanor Vance',
       email: 'demo@elune.read',
-      passwordHash,
+      passwordHash: demoPassword,
+      role: Role.USER,
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
     }
   });
 
-  console.log(`Created/found user: ${demoUser.name} (${demoUser.email})`);
+  const standardUser = await prisma.user.upsert({
+    where: { email: 'user@elune.read' },
+    update: { role: Role.USER },
+    create: {
+      id: 'usr_standard',
+      name: 'Marcus Chen',
+      email: 'user@elune.read',
+      passwordHash: userPassword,
+      role: Role.USER,
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+    }
+  });
 
-  // 2. Seed initial books from mockBooks
+  console.log(`Created users: Admin (${admin.email}), Demo (${demoUser.email}), User (${standardUser.email})`);
+
+  // 3. Book 1: Meditations (PUBLIC + APPROVED)
   const book1 = await prisma.book.upsert({
     where: { id: 'meditations-aurelius' },
-    update: {},
+    update: {
+      visibility: Visibility.PUBLIC,
+      status: BookStatus.APPROVED,
+      categoryId: philosophyCat?.id
+    },
     create: {
       id: 'meditations-aurelius',
       title: 'Meditations',
       author: 'Marcus Aurelius',
-      category: 'History',
+      description: 'Personal notes on Stoic philosophy, self-mastery, emotional resilience, and ethical living in an unpredictable world.',
       coverBg: 'linear-gradient(135deg, #4A3E3D 0%, #2A2120 100%)',
-      coverTextColor: '#F7E7CE',
-      readingTime: '4 hrs 15 mins',
-      totalPages: 248,
-      publicationYear: '180 AD',
-      isAudioAvailable: true,
-      audioDuration: '3 hrs 45 mins',
-      description: 'Personal writings of the Roman Emperor Marcus Aurelius detailing his private notes on Stoic philosophy, self-discipline, resilience, and ethical living in an unpredictable world.',
-      chapters: {
-        create: [
-          {
-            id: 'ch-1',
-            chapterNumber: 1,
-            title: 'Debts and Lessons from My Elders',
-            readingTime: '20 mins',
-            summary: 'Marcus Aurelius reflects on the virtues and morals he acquired from his grandfather, father, mother, and teachers.',
-            content: `From my grandfather Verus, I learned good morals and the government of my temper. From the reputation and remembrance of my father, modesty and a manly character. From my mother, piety and beneficence, and abstinence, not only from evil deeds, but even from evil thoughts; and further, simplicity in my way of living, far removed from the habits of the rich.
-
-When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly. They are like this because they cannot distinguish good from evil. But I have seen the beauty of good, and the ugliness of evil, and I have recognized that the wrongdoer has a nature related to my own — not of the same blood or birth, but the same mind, and possessing a share of the divine. And so none of them can hurt me. No one can implicate me in ugliness. Nor can I be angry at my relative, or hate him. We were born to work together like feet, hands, and the rows of the upper and lower teeth. To obstruct one another is unnatural. To feel anger at someone, to turn your back on him: these are obstructions.
-
-Whatever this is that I am, it is a little flesh and breath, and the ruling part. Degrade not your mind. Do not let it be enslaved, nor pulled like a puppet by every impulse. Let not your ruling reason be discontented with its present lot or dread the future.`
-          },
-          {
-            id: 'ch-2',
-            chapterNumber: 2,
-            title: 'On the Ruling Mind & Tranquility',
-            readingTime: '25 mins',
-            summary: 'An inquiry into preserving an unshakeable inner citadel amidst external chaos and opinion.',
-            content: `Perform every act of your life as if it were your last. Lay aside all carelessness, all passionate aversion to the commands of reason, all hypocrisy, self-love, and dissatisfaction with your own share. You see how few things a person needs to master in order to live a tranquil and god-fearing life.
-
-Remember how long you have put off these things, and how often you have received a opportunity from the gods, and yet do not use it. You must now at last perceive of what universe you are a part, and of what governor of the universe your existence is an efflux. A limit of time is fixed for you, which if you do not use for clearing away the clouds from your mind, it will go and never return.
-
-Never regard something as beneficial to you that will ever force you to break your pledge, to lose your self-respect, to hate anyone, to suspect, to curse, to act hypocritically, or to desire anything that needs walls and curtains to hide it.`
-          },
-          {
-            id: 'ch-3',
-            chapterNumber: 3,
-            title: 'Inner Citadel and Impermanence',
-            readingTime: '30 mins',
-            summary: 'Reflecting on nature, change, and retreat into one’s internal sanctuary.',
-            content: `People look for retreats for themselves, in the country, by the coast, or in the hills. There is nowhere that a person can find a more peaceful and trouble-free retreat than in his own mind. So constantly give yourself this retreat, and renew yourself. Let your principles be brief and fundamental, the kind that will at once close out the world and send you back without irritation to the life to which you must return.
-
-Loss is nothing else but change, and change is Nature's delight. Everything happens according to nature's ordinance. Look at the swiftness of the stream in which all things are borne past us.`
-          }
-        ]
-      },
-      summaries: {
-        create: [
-          {
-            summaryType: 'book',
-            content: JSON.stringify({
-              quickOverview: 'Meditations is a masterpiece of Stoic philosophy written as a private diary by Roman Emperor Marcus Aurelius. It emphasizes self-mastery, emotional resilience, duty, and accepting impermanence.',
-              mainIdeas: [
-                'Our thoughts determine the quality of our life, not external circumstance.',
-                'Acceptance of what we cannot control releases anxiety.',
-                'Living with integrity and serving the common good is our primary calling.'
-              ],
-              keyTakeaways: [
-                'You have power over your mind — not outside events. Realize this, and you will find strength.',
-                'It is not death that a man should fear, but he should fear never beginning to live.',
-                'The best revenge is to be unlike him who performed the injury.'
-              ],
-              importantConcepts: [
-                { title: 'The Inner Citadel', explanation: 'The mind as a fortress unaffected by external chaos if disciplined properly.' },
-                { title: 'Amor Fati', explanation: 'Love of fate — embracing every obstacle as material for personal growth.' }
-              ]
-            })
-          }
-        ]
-      }
+      coverTextColor: '#FAF0E6',
+      totalPages: 120,
+      language: 'en',
+      visibility: Visibility.PUBLIC,
+      status: BookStatus.APPROVED,
+      categoryId: philosophyCat?.id,
+      uploadedBy: admin.id
     }
   });
 
+  // Chapter 1 of Meditations
+  const ch1 = await prisma.chapter.upsert({
+    where: { id: 'ch-med-1' },
+    update: {},
+    create: {
+      id: 'ch-med-1',
+      bookId: book1.id,
+      chapterNumber: 1,
+      title: 'Debts and Lessons from My Elders'
+    }
+  });
+
+  // Paragraphs / Content Blocks for Chapter 1 with deterministic timing for audio
+  const paragraphsCh1 = [
+    {
+      id: 'cb-med-1-1',
+      blockIndex: 1,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 1,
+      text: 'From my grandfather Verus, I learned good morals and the government of my temper. From the reputation and remembrance of my father, modesty and a manly character.',
+      startTime: 0.0,
+      endTime: 12.5
+    },
+    {
+      id: 'cb-med-1-2',
+      blockIndex: 2,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 1,
+      text: 'From my mother, piety and beneficence, and abstinence, not only from evil deeds, but even from evil thoughts; and further, simplicity in my way of living, far removed from the habits of the rich.',
+      startTime: 12.5,
+      endTime: 26.8
+    },
+    {
+      id: 'cb-med-1-3',
+      blockIndex: 3,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 1,
+      text: 'When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly. They are like this because they cannot distinguish good from evil.',
+      startTime: 26.8,
+      endTime: 42.0
+    },
+    {
+      id: 'cb-med-1-4',
+      blockIndex: 4,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 2,
+      text: 'But I have seen the beauty of good, and the ugliness of evil, and I have recognized that the wrongdoer has a nature related to my own — not of the same blood or birth, but the same mind, and possessing a share of the divine.',
+      startTime: 42.0,
+      endTime: 58.5
+    },
+    {
+      id: 'cb-med-1-5',
+      blockIndex: 5,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 2,
+      text: 'And so none of them can hurt me. No one can implicate me in ugliness. Nor can I be angry at my relative, or hate him. We were born to work together like feet, hands, and the rows of the upper and lower teeth.',
+      startTime: 58.5,
+      endTime: 74.0
+    }
+  ];
+
+  for (const p of paragraphsCh1) {
+    await prisma.contentBlock.upsert({
+      where: { id: p.id },
+      update: { text: p.text, pageNumber: p.pageNumber, blockIndex: p.blockIndex },
+      create: {
+        id: p.id,
+        chapterId: ch1.id,
+        blockIndex: p.blockIndex,
+        type: p.type,
+        text: p.text,
+        pageNumber: p.pageNumber
+      }
+    });
+  }
+
+  // AudioTrack & AudioSegments for Chapter 1
+  const audioTrack1 = await prisma.audioTrack.upsert({
+    where: { id: 'at-med-ch1' },
+    update: {},
+    create: {
+      id: 'at-med-ch1',
+      bookId: book1.id,
+      chapterId: ch1.id,
+      audioUrl: '/audio/meditations-ch1.mp3',
+      duration: 74.0
+    }
+  });
+
+  for (const p of paragraphsCh1) {
+    await prisma.audioSegment.upsert({
+      where: {
+        audioTrackId_contentBlockId: {
+          audioTrackId: audioTrack1.id,
+          contentBlockId: p.id
+        }
+      },
+      update: { startTime: p.startTime, endTime: p.endTime },
+      create: {
+        audioTrackId: audioTrack1.id,
+        contentBlockId: p.id,
+        startTime: p.startTime,
+        endTime: p.endTime
+      }
+    });
+  }
+
+  // Chapter 2 of Meditations
+  const ch2 = await prisma.chapter.upsert({
+    where: { id: 'ch-med-2' },
+    update: {},
+    create: {
+      id: 'ch-med-2',
+      bookId: book1.id,
+      chapterNumber: 2,
+      title: 'On the Ruling Mind & Tranquility'
+    }
+  });
+
+  const paragraphsCh2 = [
+    {
+      id: 'cb-med-2-1',
+      blockIndex: 1,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 3,
+      text: 'Perform every act of your life as if it were your last. Lay aside all carelessness, all passionate aversion to the commands of reason, all hypocrisy, self-love, and dissatisfaction with your own share.',
+      startTime: 0.0,
+      endTime: 16.0
+    },
+    {
+      id: 'cb-med-2-2',
+      blockIndex: 2,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 3,
+      text: 'Remember how long you have put off these things, and how often you have received opportunities from the gods, and yet do not use them. A limit of time is fixed for you; if you do not use it for clearing away the clouds from your mind, it will go and never return.',
+      startTime: 16.0,
+      endTime: 34.0
+    }
+  ];
+
+  for (const p of paragraphsCh2) {
+    await prisma.contentBlock.upsert({
+      where: { id: p.id },
+      update: { text: p.text, pageNumber: p.pageNumber },
+      create: {
+        id: p.id,
+        chapterId: ch2.id,
+        blockIndex: p.blockIndex,
+        type: p.type,
+        text: p.text,
+        pageNumber: p.pageNumber
+      }
+    });
+  }
+
+  // 4. Book 2: The Architecture of Silence (PUBLIC + APPROVED)
   const book2 = await prisma.book.upsert({
     where: { id: 'architecture-of-silence' },
-    update: {},
+    update: {
+      visibility: Visibility.PUBLIC,
+      status: BookStatus.APPROVED,
+      categoryId: psychologyCat?.id
+    },
     create: {
       id: 'architecture-of-silence',
       title: 'The Architecture of Silence',
       author: 'Evelyn St. Claire',
-      category: 'Psychology',
+      description: 'An architectural exploration of quiet spaces, auditory sanctuaries, and how intentional stillness restores creative mental bandwidth in our noisy world.',
       coverBg: 'linear-gradient(135deg, #CDB891 0%, #A6916B 100%)',
       coverTextColor: '#2C2421',
-      readingTime: '3 hrs 40 mins',
-      totalPages: 192,
-      publicationYear: '2024',
-      isAudioAvailable: true,
-      audioDuration: '3 hrs 10 mins',
-      description: 'An architectural exploration of quiet spaces, auditory sanctuaries, and how intentional stillness restores creative mental bandwidth in our noisy world.',
-      chapters: {
-        create: [
-          {
-            id: 'silence-1',
-            chapterNumber: 1,
-            title: 'The Overstimulated Mind',
-            readingTime: '15 mins',
-            summary: 'Understanding modern cognitive overload and sensory fatigue caused by constant digital stimulation.',
-            content: `Silence is not the absence of sound, but the presence of awareness. In an age dominated by notification alerts and background buzz, silence has shifted from a default state to a rare luxury. 
-
-When silence is restored to our living environments, cognitive load decreases, opening pathways for deliberate contemplation and emotional grounding.`
-          },
-          {
-            id: 'silence-2',
-            chapterNumber: 2,
-            title: 'Designing Sacral Quiet Spaces',
-            readingTime: '25 mins',
-            summary: 'Principles of acoustic proportion, soft textured materials, and sanctuary room layout.',
-            content: `True quiet spaces require intentional architectural design. Acoustic resonance, natural timber surfaces, and linen drapery work in harmony to absorb high frequencies and produce an acoustic cushion. Such rooms invite deceleration and deeper contemplation.`
-          }
-        ]
-      },
-      summaries: {
-        create: [
-          {
-            summaryType: 'book',
-            content: JSON.stringify({
-              quickOverview: 'The Architecture of Silence explores how physical and mental spaces designed for quietness drastically improve human cognition and emotional well-being.',
-              mainIdeas: [
-                'Silence is active awareness rather than empty void.',
-                'Sensory overload fragments working memory and creative problem-solving.',
-                'Intentional spatial design cultivates tranquility.'
-              ],
-              keyTakeaways: [
-                'Carve out 30 minutes of intentional auditory quiet every day.',
-                'Minimize clutter and excessive harsh reflection in your reading room.'
-              ],
-              importantConcepts: [
-                { title: 'Auditory Sanctuary', explanation: 'A designated room or nook shielded from digital alerts and background noise.' }
-              ]
-            })
-          }
-        ]
-      }
+      totalPages: 140,
+      language: 'en',
+      visibility: Visibility.PUBLIC,
+      status: BookStatus.APPROVED,
+      categoryId: psychologyCat?.id,
+      uploadedBy: admin.id
     }
   });
 
-  const book3 = await prisma.book.upsert({
-    where: { id: 'art-of-clarity' },
+  const chSilence = await prisma.chapter.upsert({
+    where: { id: 'ch-silence-1' },
     update: {},
     create: {
-      id: 'art-of-clarity',
-      title: 'The Art of Clear Thinking',
-      author: 'Clara V. Vance',
-      category: 'Self Development',
-      coverBg: 'linear-gradient(135deg, #C3B091 0%, #8C785B 100%)',
-      coverTextColor: '#2C2421',
-      readingTime: '5 hrs 10 mins',
-      totalPages: 310,
-      publicationYear: '2023',
-      isAudioAvailable: true,
-      audioDuration: '4 hrs 50 mins',
-      description: 'A comprehensive field guide to mental models, cognitive biases, and systematic frameworks for making calm, rational decisions in uncertain conditions.',
+      id: 'ch-silence-1',
+      bookId: book2.id,
+      chapterNumber: 1,
+      title: 'The Overstimulated Mind'
+    }
+  });
+
+  const paragraphsSilence = [
+    {
+      id: 'cb-silence-1-1',
+      blockIndex: 1,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 1,
+      text: 'Silence is not the absence of sound, but the presence of awareness. In an era dominated by rapid notifications and continuous sensory stimulation, true silence has transformed from a default condition into a deliberate sanctuary.',
+      startTime: 0.0,
+      endTime: 16.5
+    },
+    {
+      id: 'cb-silence-1-2',
+      blockIndex: 2,
+      type: BlockType.PARAGRAPH,
+      pageNumber: 1,
+      text: 'When we create architectural nooks designed for sensory rest, cognitive fatigue dissipates. The human mind requires acoustic proportion just as much as optical clarity.',
+      startTime: 16.5,
+      endTime: 31.0
+    }
+  ];
+
+  for (const p of paragraphsSilence) {
+    await prisma.contentBlock.upsert({
+      where: { id: p.id },
+      update: {},
+      create: {
+        id: p.id,
+        chapterId: chSilence.id,
+        blockIndex: p.blockIndex,
+        type: p.type,
+        text: p.text,
+        pageNumber: p.pageNumber
+      }
+    });
+  }
+
+  // 5. Book 3: PUBLIC + PENDING (For Admin Review testing)
+  await prisma.book.upsert({
+    where: { id: 'deep-work-focus' },
+    update: {},
+    create: {
+      id: 'deep-work-focus',
+      title: 'Deep Work and Peaceful Focus',
+      author: 'Kaelen Mori',
+      description: 'Submitted by user for public catalog review. Examines cognitive endurance and ritualized concentration.',
+      coverBg: 'linear-gradient(135deg, #3A4F41 0%, #1E2B23 100%)',
+      coverTextColor: '#E8F0EA',
+      totalPages: 160,
+      language: 'en',
+      visibility: Visibility.PUBLIC,
+      status: BookStatus.PENDING,
+      categoryId: selfDevCat?.id,
+      uploadedBy: standardUser.id,
       chapters: {
         create: [
           {
-            id: 'clarity-1',
+            title: 'The Value of Deep Solitude',
             chapterNumber: 1,
-            title: 'First Principles Thinking',
-            readingTime: '20 mins',
-            summary: 'Deconstructing complex problems into their most fundamental truths before reasoning upward.',
-            content: `First principles thinking is one of the most effective mental models to eliminate bias and convention. Instead of reasoning by analogy—copying how others have solved similar challenges—first principles reasoning breaks an idea down to its immutable bedrock.`
+            contentBlocks: {
+              create: [
+                {
+                  blockIndex: 1,
+                  type: BlockType.PARAGRAPH,
+                  pageNumber: 1,
+                  text: 'Deep solitude allows the nervous system to untangle from superficial urgency. By safeguarding uninterrupted reading stretches, we restore high-order reasoning.'
+                }
+              ]
+            }
           }
         ]
       }
     }
   });
 
-  // Seed UserBook (favorites & library)
-  await prisma.userBook.upsert({
+  // 6. Book 4: PRIVATE (Owner only: demoUser)
+  const privateBook = await prisma.book.upsert({
+    where: { id: 'private-journal-eleanor' },
+    update: {},
+    create: {
+      id: 'private-journal-eleanor',
+      title: 'Personal Reflections & Philosophy Journal',
+      author: 'Eleanor Vance',
+      description: 'My private reading reflections and daily contemplative notes. Visible only to Eleanor.',
+      coverBg: 'linear-gradient(135deg, #5C3D2E 0%, #2B1810 100%)',
+      coverTextColor: '#FAF0E6',
+      totalPages: 45,
+      language: 'en',
+      visibility: Visibility.PRIVATE,
+      status: BookStatus.APPROVED,
+      categoryId: philosophyCat?.id,
+      uploadedBy: demoUser.id,
+      chapters: {
+        create: [
+          {
+            title: 'First Principles of My Sanctuary',
+            chapterNumber: 1,
+            contentBlocks: {
+              create: [
+                {
+                  blockIndex: 1,
+                  type: BlockType.PARAGRAPH,
+                  pageNumber: 1,
+                  text: 'This private note serves as my personal reading sanctuary within Elunè. Here I synthesize Stoic virtues with modern reflective habits.'
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  // 7. Seed Bookmarks & Notes per Paragraph for Demo User
+  await prisma.bookmark.upsert({
     where: {
-      userId_bookId: {
+      userId_contentBlockId: {
         userId: demoUser.id,
-        bookId: book1.id
+        contentBlockId: 'cb-med-1-3'
       }
     },
     update: {},
     create: {
       userId: demoUser.id,
       bookId: book1.id,
-      isFavorite: true
+      chapterId: ch1.id,
+      contentBlockId: 'cb-med-1-3',
+      pageNumber: 1,
+      note: 'Crucial morning perspective for peaceful interactions.'
     }
   });
 
-  await prisma.userBook.upsert({
-    where: {
-      userId_bookId: {
+  const existingNote = await prisma.note.findFirst({
+    where: { userId: demoUser.id, contentBlockId: 'cb-med-1-3' }
+  });
+  if (!existingNote) {
+    await prisma.note.create({
+      data: {
         userId: demoUser.id,
-        bookId: book2.id
+        bookId: book1.id,
+        chapterId: ch1.id,
+        contentBlockId: 'cb-med-1-3',
+        pageNumber: 1,
+        content: 'Read this paragraph every morning before opening email or messages.'
       }
-    },
-    update: {},
-    create: {
-      userId: demoUser.id,
-      bookId: book2.id,
-      isFavorite: true
-    }
-  });
+    });
+  }
 
-  // Seed ReadingProgress
+  // 8. Seed ReadingProgress with canonical contentBlockId
   await prisma.readingProgress.upsert({
     where: {
       userId_bookId: {
@@ -241,31 +446,45 @@ When silence is restored to our living environments, cognitive load decreases, o
     create: {
       userId: demoUser.id,
       bookId: book1.id,
-      currentPage: 34,
-      currentChapter: 0,
-      progressPercentage: 24
+      currentChapterId: ch1.id,
+      currentContentBlockId: 'cb-med-1-3',
+      currentPage: 1,
+      progressPercentage: 25.0
     }
   });
 
-  // Seed Highlights
-  const existingHl = await prisma.highlight.findFirst({
-    where: { userId: demoUser.id, bookId: book1.id }
-  });
-  if (!existingHl) {
-    await prisma.highlight.create({
-      data: {
+  // 9. Seed Personal Library (UserBook)
+  await prisma.userBook.upsert({
+    where: {
+      userId_bookId: {
         userId: demoUser.id,
-        bookId: book1.id,
-        chapterId: 'ch-1',
-        chapterTitle: 'Debts and Lessons from My Elders',
-        text: 'When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly...',
-        color: 'yellow',
-        note: 'Essential morning perspective for peaceful interactions.'
+        bookId: book1.id
       }
-    });
-  }
+    },
+    update: {},
+    create: {
+      userId: demoUser.id,
+      bookId: book1.id,
+      isFavorite: true
+    }
+  });
 
-  console.log('Seeding completed successfully!');
+  await prisma.userBook.upsert({
+    where: {
+      userId_bookId: {
+        userId: demoUser.id,
+        bookId: privateBook.id
+      }
+    },
+    update: {},
+    create: {
+      userId: demoUser.id,
+      bookId: privateBook.id,
+      isFavorite: false
+    }
+  });
+
+  console.log('✅ Seeding completed with comprehensive models and data!');
 }
 
 main()

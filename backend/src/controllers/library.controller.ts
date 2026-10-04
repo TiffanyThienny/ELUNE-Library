@@ -17,7 +17,7 @@ export const getLibrary = async (req: Request, res: Response): Promise<void> => 
         book: {
           include: {
             chapters: {
-              select: { id: true, chapterNumber: true, title: true, readingTime: true, summary: true, content: true },
+              select: { id: true, chapterNumber: true, title: true, _count: { select: { contentBlocks: true } } },
               orderBy: { chapterNumber: 'asc' }
             },
             summaries: {

@@ -7,12 +7,43 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Visibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum BookStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BlockType {
+  PARAGRAPH
+  HEADING
+  QUOTE
+  LIST
+  IMAGE
+}
+
+enum ReviewAction {
+  APPROVED
+  REJECTED
+}
+
 model User {
   id              String            @id @default(cuid())
   name            String
   email           String            @unique
   passwordHash    String
   avatar          String?
+  role            Role              @default(USER)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -20,83 +51,121 @@ model User {
   userBooks       UserBook[]
   readingProgress ReadingProgress[]
   bookmarks       Bookmark[]
-  highlights      Highlight[]
+  notes           Note[]
   summaries       Summary[]
   aiChats         AIChat[]
   flashcards      Flashcard[]
   quizzes         Quiz[]
-  audios          Audio[]
+  audioTracks     AudioTrack[]
+  reviews         BookUploadReview[] @relation("AdminReviews")
 
+  @@index([email])
+  @@index([role])
   @@map("users")
 }
 
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  books       Book[]
+
+  @@map("categories")
+}
+
 model Book {
-  id               String            @id @default(cuid())
-  title            String
-  author           String
-  description      String            @db.Text
-  coverUrl         String?           @db.Text
-  coverBg          String?           @default("linear-gradient(135deg, #4A3E3D 0%, #2A2120 100%)")
-  coverTextColor   String?           @default("#FAF0E6")
-  readingTime      String?           @default("3 hrs")
-  publicationYear  String?           @default("2026")
-  fileUrl          String?           @db.Text
-  fileType         String?           @default("EPUB")
-  totalPages       Int               @default(100)
-  language         String            @default("en")
-  category         String            @default("Self Development")
-  isAudioAvailable Boolean           @default(true)
-  audioDuration    String?           @default("30 mins")
-  audioUrl         String?           @db.Text
-  uploadedBy       String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id              String            @id @default(cuid())
+  title           String
+  author          String
+  description     String            @db.Text
+  coverUrl        String?           @db.Text
+  coverBg         String?           @default("linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)")
+  coverTextColor  String?           @default("#FAF0E6")
+  fileUrl         String?           @db.Text
+  fileType        String?           @default("EPUB")
+  totalPages      Int               @default(100)
+  language        String            @default("en")
+  categoryId      String?
+  uploadedBy      String?
+  visibility      Visibility        @default(PUBLIC)
+  status          BookStatus        @default(APPROVED)
+  rejectionReason String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  uploader         User?             @relation("UserUploadedBooks", fields: [uploadedBy], references: [id], onDelete: SetNull)
-  chapters         Chapter[]
-  userBooks        UserBook[]
-  readingProgress  ReadingProgress[]
-  bookmarks        Bookmark[]
-  highlights       Highlight[]
-  summaries        Summary[]
-  aiChats          AIChat[]
-  flashcards       Flashcard[]
-  quizzes          Quiz[]
-  audios           Audio[]
+  category        Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  uploader        User?             @relation("UserUploadedBooks", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  chapters        Chapter[]
+  userBooks       UserBook[]
+  readingProgress ReadingProgress[]
+  bookmarks       Bookmark[]
+  notes           Note[]
+  summaries       Summary[]
+  aiChats         AIChat[]
+  flashcards      Flashcard[]
+  quizzes         Quiz[]
+  audioTracks     AudioTrack[]
+  reviews         BookUploadReview[]
 
-  @@index([category])
+  @@index([categoryId])
   @@index([uploadedBy])
+  @@index([visibility])
+  @@index([status])
   @@map("books")
 }
 
 model Chapter {
-  id            String      @id @default(cuid())
+  id            String         @id @default(cuid())
   bookId        String
   title         String
   chapterNumber Int
-  readingTime   String?     @default("15 mins")
-  summary       String?     @db.Text
-  content       String      @db.Text
-  createdAt     DateTime    @default(now())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
 
-  book          Book        @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  summaries     Summary[]
+  book          Book           @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  contentBlocks ContentBlock[]
   bookmarks     Bookmark[]
-  audios        Audio[]
+  notes         Note[]
+  summaries     Summary[]
+  audioTracks   AudioTrack[]
 
   @@index([bookId])
   @@map("chapters")
 }
 
-model UserBook {
-  id        String    @id @default(cuid())
-  userId    String
-  bookId    String
-  isFavorite Boolean  @default(false)
-  addedAt   DateTime  @default(now())
+model ContentBlock {
+  id           String         @id @default(cuid())
+  chapterId    String
+  blockIndex   Int
+  type         BlockType      @default(PARAGRAPH)
+  text         String         @db.Text
+  pageNumber   Int            @default(1)
+  startOffset  Int?           @default(0)
+  endOffset    Int?           @default(0)
+  createdAt    DateTime       @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book      Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter      Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  bookmarks    Bookmark[]
+  notes        Note[]
+  audioSegments AudioSegment[]
+
+  @@index([chapterId])
+  @@index([pageNumber])
+  @@map("content_blocks")
+}
+
+model UserBook {
+  id         String    @id @default(cuid())
+  userId     String
+  bookId     String
+  isFavorite Boolean   @default(false)
+  addedAt    DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book       Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
   @@unique([userId, bookId])
   @@index([userId])
@@ -105,16 +174,17 @@ model UserBook {
 }
 
 model ReadingProgress {
-  id                 String    @id @default(cuid())
-  userId             String
-  bookId             String
-  currentPage        Int       @default(1)
-  currentChapter     Int       @default(0)
-  progressPercentage Float     @default(0)
-  lastReadAt         DateTime  @default(now())
+  id                   String    @id @default(cuid())
+  userId               String
+  bookId               String
+  currentChapterId     String?
+  currentContentBlockId String?
+  currentPage          Int       @default(1)
+  progressPercentage   Float     @default(0)
+  lastReadAt           DateTime  @default(now())
 
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book               Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book                 Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
   @@unique([userId, bookId])
   @@index([userId])
@@ -123,40 +193,49 @@ model ReadingProgress {
 }
 
 model Bookmark {
-  id        String    @id @default(cuid())
-  userId    String
-  bookId    String
-  page      Int       @default(1)
-  chapterId String?
-  note      String?   @db.Text
-  createdAt DateTime  @default(now())
+  id             String        @id @default(cuid())
+  userId         String
+  bookId         String
+  chapterId      String
+  contentBlockId String
+  pageNumber     Int           @default(1)
+  note           String?       @db.Text
+  createdAt      DateTime      @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book      Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  chapter   Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book           Book          @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter        Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  contentBlock   ContentBlock  @relation(fields: [contentBlockId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, contentBlockId])
   @@index([userId])
   @@index([bookId])
+  @@index([chapterId])
+  @@index([contentBlockId])
   @@map("bookmarks")
 }
 
-model Highlight {
-  id           String    @id @default(cuid())
-  userId       String
-  bookId       String
-  chapterId    String?
-  chapterTitle String?
-  text         String    @db.Text
-  color        String    @default("yellow")
-  note         String?   @db.Text
-  createdAt    DateTime  @default(now())
+model Note {
+  id             String        @id @default(cuid())
+  userId         String
+  bookId         String
+  chapterId      String
+  contentBlockId String
+  pageNumber     Int           @default(1)
+  content        String        @db.Text
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book         Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book           Book          @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter        Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  contentBlock   ContentBlock  @relation(fields: [contentBlockId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([bookId])
-  @@map("highlights")
+  @@index([chapterId])
+  @@index([contentBlockId])
+  @@map("notes")
 }
 
 model Summary {
@@ -165,7 +244,7 @@ model Summary {
   bookId      String
   chapterId   String?
   summaryType String    @default("book") // "quick", "detailed", "keyPoints", "chapter", "book"
-  content     String    @db.Text // Can store structured JSON string or plain text
+  content     String    @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -216,7 +295,7 @@ model Quiz {
   userId        String?
   bookId        String
   question      String    @db.Text
-  options       String    @db.Text // JSON array of options string
+  options       String    @db.Text // JSON array
   correctAnswer String    @db.Text
   explanation   String?   @db.Text
   createdAt     DateTime  @default(now())
@@ -229,21 +308,53 @@ model Quiz {
   @@map("quizzes")
 }
 
-model Audio {
-  id        String    @id @default(cuid())
-  userId    String?
-  bookId    String
-  chapterId String?
-  audioUrl  String    @db.Text
-  duration  Int?      @default(0)
-  createdAt DateTime  @default(now())
+model AudioTrack {
+  id            String         @id @default(cuid())
+  bookId        String
+  chapterId     String?
+  audioUrl      String         @db.Text
+  duration      Float          @default(0) // seconds
+  createdAt     DateTime       @default(now())
 
-  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book      Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  chapter   Chapter?  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId        String?
+  book          Book           @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapter       Chapter?       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  segments      AudioSegment[]
 
-  @@index([userId])
   @@index([bookId])
   @@index([chapterId])
-  @@map("audios")
+  @@map("audio_tracks")
+}
+
+model AudioSegment {
+  id             String        @id @default(cuid())
+  audioTrackId   String
+  contentBlockId String
+  startTime      Float         // seconds e.g. 12.5
+  endTime        Float         // seconds e.g. 24.8
+
+  audioTrack     AudioTrack    @relation(fields: [audioTrackId], references: [id], onDelete: Cascade)
+  contentBlock   ContentBlock  @relation(fields: [contentBlockId], references: [id], onDelete: Cascade)
+
+  @@unique([audioTrackId, contentBlockId])
+  @@index([audioTrackId])
+  @@index([contentBlockId])
+  @@map("audio_segments")
+}
+
+model BookUploadReview {
+  id             String        @id @default(cuid())
+  bookId         String
+  reviewerId     String
+  action         ReviewAction
+  notes          String?       @db.Text
+  createdAt      DateTime      @default(now())
+
+  book           Book          @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  reviewer       User          @relation("AdminReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@index([bookId])
+  @@index([reviewerId])
+  @@map("book_upload_reviews")
 }

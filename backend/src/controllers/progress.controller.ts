@@ -26,7 +26,8 @@ export const getProgress = async (req: Request, res: Response): Promise<void> =>
         res,
         {
           currentPage: 1,
-          currentChapter: 0,
+          currentChapterId: null,
+          currentContentBlockId: null,
           progressPercentage: 0,
           lastReadAt: new Date().toISOString()
         },
@@ -46,7 +47,7 @@ export const updateProgress = async (req: Request, res: Response): Promise<void>
   try {
     const userId = req.user?.id;
     const { bookId } = req.params;
-    const { currentPage, currentChapter, progressPercentage } = req.body;
+    const { currentPage, currentChapterId, currentContentBlockId, progressPercentage } = req.body;
 
     if (!userId) {
       sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
@@ -62,7 +63,8 @@ export const updateProgress = async (req: Request, res: Response): Promise<void>
       },
       update: {
         currentPage: currentPage !== undefined ? Number(currentPage) : undefined,
-        currentChapter: currentChapter !== undefined ? Number(currentChapter) : undefined,
+        currentChapterId: currentChapterId !== undefined ? currentChapterId : undefined,
+        currentContentBlockId: currentContentBlockId !== undefined ? currentContentBlockId : undefined,
         progressPercentage: progressPercentage !== undefined ? Number(progressPercentage) : undefined,
         lastReadAt: new Date()
       },
@@ -70,7 +72,8 @@ export const updateProgress = async (req: Request, res: Response): Promise<void>
         userId,
         bookId,
         currentPage: currentPage ? Number(currentPage) : 1,
-        currentChapter: currentChapter ? Number(currentChapter) : 0,
+        currentChapterId: currentChapterId || null,
+        currentContentBlockId: currentContentBlockId || null,
         progressPercentage: progressPercentage ? Number(progressPercentage) : 0,
         lastReadAt: new Date()
       }
@@ -115,7 +118,7 @@ export const getReadingHistory = async (req: Request, res: Response): Promise<vo
       else if (diffHours < 48) timePeriod = 'Yesterday';
       else if (diffHours < 168) timePeriod = 'This Week';
 
-      const currentCh = item.book.chapters.find((c) => c.chapterNumber === item.currentChapter + 1) || item.book.chapters[0];
+      const currentCh = item.book.chapters.find((c) => c.id === item.currentChapterId) || item.book.chapters[0];
 
       return {
         id: item.id,
