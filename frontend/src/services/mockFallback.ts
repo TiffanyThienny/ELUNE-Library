@@ -611,9 +611,12 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     let title = 'New Literature Volume';
     let author = 'You';
     let description = 'Uploaded by reader';
-    let visibility = 'PRIVATE';
+    let visibility = 'PUBLIC';
     let categoryId = 'cat-philosophy';
     let language = 'English';
+    let coverUrl: string | undefined = undefined;
+    let totalPages = 24;
+    let chapters: any[] = [];
 
     if (options.body instanceof FormData) {
       title = String(options.body.get('title') || title);
@@ -622,38 +625,63 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       visibility = String(options.body.get('visibility') || visibility);
       categoryId = String(options.body.get('categoryId') || categoryId);
       language = String(options.body.get('language') || language);
+      const customCover = options.body.get('coverUrl');
+      if (customCover && typeof customCover === 'string') {
+        coverUrl = customCover;
+      }
+      const pagesStr = options.body.get('totalPages');
+      if (pagesStr) {
+        totalPages = parseInt(String(pagesStr), 10) || totalPages;
+      }
+
+      const extractedJson = options.body.get('extractedChapters');
+      if (extractedJson) {
+        try {
+          const rawChapters = JSON.parse(String(extractedJson));
+          if (Array.isArray(rawChapters) && rawChapters.length > 0) {
+            chapters = rawChapters.map((ch: any, idx: number) => ({
+              id: `ch-up-${Date.now()}-${idx + 1}`,
+              bookId: `uploaded-${Date.now()}`,
+              chapterNumber: ch.chapterNumber || idx + 1,
+              title: ch.title || `Chapter ${idx + 1}`,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              contentBlocks: (ch.contentBlocks || []).map((cb: any, bIdx: number) => ({
+                id: `cb-up-${Date.now()}-${idx + 1}-${bIdx + 1}`,
+                chapterId: `ch-up-${Date.now()}-${idx + 1}`,
+                blockIndex: cb.blockIndex || bIdx + 1,
+                type: 'PARAGRAPH',
+                pageNumber: cb.pageNumber || 1,
+                text: cb.text || '',
+                createdAt: new Date().toISOString(),
+              })),
+            }));
+          }
+        } catch (e) {
+          console.warn('Failed to parse extractedChapters in mockFallback', e);
+        }
+      }
     }
 
     const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || '{}');
     const isAdmin = currentUser?.role === 'ADMIN';
 
-    // Core rule: If admin uploads, it is ALWAYS PUBLIC and ALWAYS APPROVED
+    // Core rule: If admin uploads, it is ALWAYS PUBLIC
     if (isAdmin) {
       visibility = 'PUBLIC';
     }
-    const status = isAdmin ? 'APPROVED' : (visibility === 'PUBLIC' ? 'PENDING' : 'APPROVED');
+
+    // Both PUBLIC and PRIVATE uploaded books are immediately APPROVED so results appear right away
+    const status = 'APPROVED';
 
     const matchedCat = FALLBACK_CATEGORIES.find((c) => c.id === categoryId) || FALLBACK_CATEGORIES[0];
+    const newBookId = `uploaded-${Date.now()}`;
 
-    const newBook: Book = {
-      id: `uploaded-${Date.now()}`,
-      title,
-      author,
-      description,
-      categoryId,
-      category: matchedCat,
-      totalPages: 100,
-      language,
-      fileType: 'CANONICAL',
-      visibility: visibility as any,
-      status: status as any,
-      uploadedBy: currentUser?.id || 'usr_current',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      chapters: [
+    if (chapters.length === 0) {
+      chapters = [
         {
           id: `ch-up-${Date.now()}-1`,
-          bookId: `uploaded-${Date.now()}`,
+          bookId: newBookId,
           chapterNumber: 1,
           title: 'Chapter 1: Opening Passages',
           createdAt: new Date().toISOString(),
@@ -666,21 +694,53 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
               type: 'PARAGRAPH',
               pageNumber: 1,
               text: `Opening of "${title}". This canonical text has been processed and prepared for focused reading, margin notes, and interactive AI contemplation.`,
-              createdAt: new Date().toISOString()
-            }
-          ]
-        }
-      ]
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+      ];
+    }
+
+    const newBook: Book = {
+      id: newBookId,
+      title,
+      author,
+      description,
+      categoryId,
+      category: matchedCat,
+      coverUrl,
+      totalPages,
+      language,
+      fileType: 'CANONICAL',
+      visibility: visibility as any,
+      status: status as any,
+      uploadedBy: currentUser?.id || 'usr_current',
+      uploader: {
+        id: currentUser?.id || 'usr_current',
+        name: currentUser?.name || author,
+        email: currentUser?.email || 'reader@elune.read',
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      chapters,
     };
 
+    // Save to user uploads
     const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
     userUploads.unshift(newBook);
     localStorage.setItem('elune_user_uploads', JSON.stringify(userUploads));
 
+    // Also automatically add to Saved Library so user sees it in both places
+    const savedLib: Book[] = JSON.parse(localStorage.getItem('elune_my_library') || '[]');
+    if (!savedLib.some((b) => b.id === newBook.id)) {
+      savedLib.unshift(newBook);
+      localStorage.setItem('elune_my_library', JSON.stringify(savedLib));
+    }
+
     return {
       success: true,
       data: { book: newBook },
-      message: 'Book uploaded successfully'
+      message: 'Book uploaded and ingested successfully',
     } as T;
   }
 

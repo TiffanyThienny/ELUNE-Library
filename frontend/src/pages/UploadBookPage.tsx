@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { categoryService, bookService } from '../services/api';
 import { Category } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Toast, ToastType } from '../components/Toast';
+import { parsePdfFile, parseTextFile } from '../utils/pdfParser';
 import {
   UploadCloud,
   FileText,
@@ -13,6 +13,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Shield,
+  Loader2,
 } from 'lucide-react';
 
 const LANGUAGE_OPTIONS = [
@@ -42,12 +43,13 @@ export const UploadBookPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [language, setLanguage] = useState('English');
-  const [visibility, setVisibility] = useState<'PRIVATE' | 'PUBLIC'>(isAdmin ? 'PUBLIC' : 'PRIVATE');
+  const [visibility, setVisibility] = useState<'PRIVATE' | 'PUBLIC'>(isAdmin ? 'PUBLIC' : 'PUBLIC');
 
   const [bookFile, setBookFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -78,37 +80,76 @@ export const UploadBookPage: React.FC = () => {
     try {
       const effectiveVisibility = isAdmin ? 'PUBLIC' : visibility;
       const formData = new FormData();
-      formData.append('title', title.trim());
-      formData.append('author', author.trim());
+      formData.append('title', (title.trim() || bookFile.name.replace(/\.[^/.]+$/, '')));
+      formData.append('author', (author.trim() || 'Author'));
       formData.append('description', description.trim());
       formData.append('language', language);
       formData.append('visibility', effectiveVisibility);
       if (categoryId) formData.append('categoryId', categoryId);
 
       formData.append('file', bookFile);
-      if (coverFile) {
-        formData.append('cover', coverFile);
+
+      // Extract PDF/Text chapters and paragraphs client-side so results appear immediately
+      if (bookFile.name.toLowerCase().endsWith('.pdf')) {
+        setProcessingStatus('Extracting pages and chapters from PDF...');
+        try {
+          const parsed = await parsePdfFile(bookFile);
+          if (parsed && parsed.chapters.length > 0) {
+            formData.append('extractedChapters', JSON.stringify(parsed.chapters));
+            formData.append('totalPages', String(parsed.totalPages));
+          }
+        } catch (pdfErr) {
+          console.warn('Client-side PDF parse error, continuing upload', pdfErr);
+        }
+      } else if (bookFile.name.toLowerCase().endsWith('.txt') || bookFile.name.toLowerCase().endsWith('.md')) {
+        setProcessingStatus('Extracting paragraphs from document...');
+        try {
+          const parsed = await parseTextFile(bookFile);
+          if (parsed && parsed.chapters.length > 0) {
+            formData.append('extractedChapters', JSON.stringify(parsed.chapters));
+            formData.append('totalPages', String(parsed.totalPages));
+          }
+        } catch (txtErr) {
+          console.warn('Client-side text parse error', txtErr);
+        }
       }
 
+      // Convert cover to DataURL if provided for immediate preview
+      if (coverFile) {
+        formData.append('cover', coverFile);
+        try {
+          const reader = new FileReader();
+          const coverDataUrl = await new Promise<string>((resolve) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(coverFile);
+          });
+          formData.append('coverUrl', coverDataUrl);
+        } catch (coverErr) {
+          console.warn('Cover preview generation skipped', coverErr);
+        }
+      }
+
+      setProcessingStatus('Saving volume to library archive...');
       const res = await bookService.upload(formData);
 
-      if (res.success) {
-        if (isAdmin) {
-          setSuccessMessage('Book uploaded and instantly approved for the public Explore catalog.');
-        } else if (effectiveVisibility === 'PUBLIC') {
-          setSuccessMessage('Your book has been submitted for admin review.');
-        } else {
-          setSuccessMessage('Upload successful. Your private book is now ready in your library.');
-        }
+      if (res.success && res.data?.book) {
+        const uploadedBook = res.data.book;
+        setSuccessMessage('Book ingested and processed successfully! Opening reader...');
 
         setTimeout(() => {
-          navigate(isAdmin ? '/explore' : '/library');
-        }, 1800);
+          navigate(`/read/${uploadedBook.id}`);
+        }, 1200);
+      } else {
+        setSuccessMessage('Upload successful! Redirecting to Explore...');
+        setTimeout(() => {
+          navigate('/explore');
+        }, 1200);
       }
     } catch (err: any) {
       setError(err.message || 'Book upload failed. Please try again.');
     } finally {
       setLoading(false);
+      setProcessingStatus(null);
     }
   };
 
@@ -236,7 +277,14 @@ export const UploadBookPage: React.FC = () => {
               type="file"
               required
               accept=".pdf,.epub,.txt"
-              onChange={(e) => setBookFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setBookFile(file);
+                if (file && !title.trim()) {
+                  const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+                  setTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
+                }
+              }}
               className="text-xs text-[#665A4F] file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#2C2421] file:text-white hover:file:bg-[#433832]"
             />
           </div>
@@ -284,7 +332,7 @@ export const UploadBookPage: React.FC = () => {
                     <Globe className="w-3.5 h-3.5 text-[#8C7355]" /> Public
                   </span>
                   <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                    Anyone can read this book after admin approval.
+                    Visible immediately in the Explore catalog for all readers.
                   </span>
                 </div>
               </label>
@@ -310,7 +358,7 @@ export const UploadBookPage: React.FC = () => {
                     <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private
                   </span>
                   <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                    Only you can access this book.
+                    Only you can access this book in your personal library.
                   </span>
                 </div>
               </label>
@@ -319,21 +367,32 @@ export const UploadBookPage: React.FC = () => {
         )}
 
         {/* Submit CTA */}
-        <div className="pt-4 flex justify-end">
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 flex items-center gap-2"
-          >
-            {loading ? (
-              'Ingesting and parsing paragraphs...'
-            ) : (
-              <>
-                <UploadCloud className="w-4 h-4" />
-                Upload Book
-              </>
-            )}
-          </button>
+        <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          {processingStatus && (
+            <div className="flex items-center gap-2 text-xs text-[#8C7355] font-medium">
+              <Loader2 className="w-4 h-4 animate-spin text-[#8C7355]" />
+              <span>{processingStatus}</span>
+            </div>
+          )}
+          <div className="ml-auto">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-3 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Processing Volume...</span>
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Upload Book</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </div>
