@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { categoryService, bookService } from '../services/api';
 import { Category } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { Toast, ToastType } from '../components/Toast';
 import {
   UploadCloud,
@@ -11,10 +12,28 @@ import {
   Globe,
   AlertCircle,
   CheckCircle2,
+  Shield,
 } from 'lucide-react';
+
+const LANGUAGE_OPTIONS = [
+  { value: 'English', label: 'English' },
+  { value: 'Indonesian', label: 'Indonesian (Bahasa Indonesia)' },
+  { value: 'Latin', label: 'Latin (Lingua Latina)' },
+  { value: 'French', label: 'French (Français)' },
+  { value: 'German', label: 'German (Deutsch)' },
+  { value: 'Spanish', label: 'Spanish (Español)' },
+  { value: 'Italian', label: 'Italian (Italiano)' },
+  { value: 'Japanese', label: 'Japanese (日本語)' },
+  { value: 'Arabic', label: 'Arabic (العربية)' },
+  { value: 'Ancient Greek', label: 'Ancient Greek (Ἑλληνική)' },
+  { value: 'Dutch', label: 'Dutch (Nederlands)' },
+  { value: 'Russian', label: 'Russian (Русский)' },
+  { value: 'Chinese', label: 'Chinese (中文)' },
+];
 
 export const UploadBookPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
 
   // Form State
@@ -23,7 +42,7 @@ export const UploadBookPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [language, setLanguage] = useState('English');
-  const [visibility, setVisibility] = useState<'PRIVATE' | 'PUBLIC'>('PRIVATE');
+  const [visibility, setVisibility] = useState<'PRIVATE' | 'PUBLIC'>(isAdmin ? 'PUBLIC' : 'PRIVATE');
 
   const [bookFile, setBookFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -57,12 +76,13 @@ export const UploadBookPage: React.FC = () => {
     setError(null);
 
     try {
+      const effectiveVisibility = isAdmin ? 'PUBLIC' : visibility;
       const formData = new FormData();
       formData.append('title', title.trim());
       formData.append('author', author.trim());
       formData.append('description', description.trim());
       formData.append('language', language);
-      formData.append('visibility', visibility);
+      formData.append('visibility', effectiveVisibility);
       if (categoryId) formData.append('categoryId', categoryId);
 
       formData.append('file', bookFile);
@@ -73,15 +93,17 @@ export const UploadBookPage: React.FC = () => {
       const res = await bookService.upload(formData);
 
       if (res.success) {
-        if (visibility === 'PUBLIC') {
+        if (isAdmin) {
+          setSuccessMessage('Book uploaded and instantly approved for the public Explore catalog.');
+        } else if (effectiveVisibility === 'PUBLIC') {
           setSuccessMessage('Your book has been submitted for admin review.');
         } else {
           setSuccessMessage('Upload successful. Your private book is now ready in your library.');
         }
 
         setTimeout(() => {
-          navigate('/library');
-        }, 2000);
+          navigate(isAdmin ? '/explore' : '/library');
+        }, 1800);
       }
     } catch (err: any) {
       setError(err.message || 'Book upload failed. Please try again.');
@@ -189,13 +211,17 @@ export const UploadBookPage: React.FC = () => {
             <label className="block text-xs font-semibold text-[#2C2421] mb-1.5">
               Language
             </label>
-            <input
-              type="text"
+            <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              placeholder="e.g. English, Latin, Indonesian"
-              className="w-full px-4 py-2.5 rounded-xl border border-[#E8DFD3] bg-[#FAF7F2] text-xs text-[#2C2421] focus:outline-hidden focus:border-[#8C7355]"
-            />
+              className="w-full px-3 py-2.5 rounded-xl border border-[#E8DFD3] bg-[#FAF7F2] text-xs text-[#2C2421] focus:outline-hidden focus:border-[#8C7355]"
+            >
+              {LANGUAGE_OPTIONS.map((lang) => (
+                <option key={lang.value} value={lang.value}>
+                  {lang.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -235,59 +261,71 @@ export const UploadBookPage: React.FC = () => {
             Visibility & Publication Flow
           </label>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Private option */}
-            <label
-              className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                visibility === 'PRIVATE'
-                  ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
-                  : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
-              }`}
-            >
-              <input
-                type="radio"
-                name="visibility"
-                value="PRIVATE"
-                checked={visibility === 'PRIVATE'}
-                onChange={() => setVisibility('PRIVATE')}
-                className="mt-1 accent-[#8C7355]"
-              />
-              <div>
-                <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
-                  <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private
-                </span>
-                <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                  Only you can read, bookmark, and consult AI. Does not require admin approval.
-                </span>
+          {isAdmin ? (
+            <div className="p-4 rounded-2xl border border-emerald-300 bg-emerald-50/70 text-[#2C2421]">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 mb-1">
+                <Shield className="w-4 h-4 text-emerald-700" />
+                Admin Publication: Instant Approval & Public Catalog
               </div>
-            </label>
+              <p className="text-xs text-emerald-900 leading-relaxed">
+                As an <strong>Administrator</strong>, your uploaded volumes are <strong>automatically approved</strong> and published directly into the <strong>Public Explore Books</strong> catalog with full AI reading features enabled.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Private option */}
+              <label
+                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                  visibility === 'PRIVATE'
+                    ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
+                    : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="PRIVATE"
+                  checked={visibility === 'PRIVATE'}
+                  onChange={() => setVisibility('PRIVATE')}
+                  className="mt-1 accent-[#8C7355]"
+                />
+                <div>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
+                    <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private
+                  </span>
+                  <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
+                    Only you can read, bookmark, and consult AI. Does not require admin approval.
+                  </span>
+                </div>
+              </label>
 
-            {/* Public option */}
-            <label
-              className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                visibility === 'PUBLIC'
-                  ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
-                  : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
-              }`}
-            >
-              <input
-                type="radio"
-                name="visibility"
-                value="PUBLIC"
-                checked={visibility === 'PUBLIC'}
-                onChange={() => setVisibility('PUBLIC')}
-                className="mt-1 accent-[#8C7355]"
-              />
-              <div>
-                <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
-                  <Globe className="w-3.5 h-3.5 text-[#8C7355]" /> Public
-                </span>
-                <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                  Submitted for editorial admin review before gracing the public explore library.
-                </span>
-              </div>
-            </label>
-          </div>
+              {/* Public option */}
+              <label
+                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                  visibility === 'PUBLIC'
+                    ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
+                    : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="PUBLIC"
+                  checked={visibility === 'PUBLIC'}
+                  onChange={() => setVisibility('PUBLIC')}
+                  className="mt-1 accent-[#8C7355]"
+                />
+                <div>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
+                    <Globe className="w-3.5 h-3.5 text-[#8C7355]" /> Public
+                  </span>
+                  <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
+                    Submitted for editorial admin review before gracing the public explore library.
+                  </span>
+                </div>
+              </label>
+            </div>
+          )}
         </div>
 
         {/* Submit CTA */}

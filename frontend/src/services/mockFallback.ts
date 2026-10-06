@@ -373,6 +373,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     let description = 'Uploaded by reader';
     let visibility = 'PRIVATE';
     let categoryId = 'cat-philosophy';
+    let language = 'English';
 
     if (options.body instanceof FormData) {
       title = String(options.body.get('title') || title);
@@ -380,7 +381,17 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       description = String(options.body.get('description') || description);
       visibility = String(options.body.get('visibility') || visibility);
       categoryId = String(options.body.get('categoryId') || categoryId);
+      language = String(options.body.get('language') || language);
     }
+
+    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || '{}');
+    const isAdmin = currentUser?.role === 'ADMIN';
+
+    // Core rule: If admin uploads, it is ALWAYS PUBLIC and ALWAYS APPROVED
+    if (isAdmin) {
+      visibility = 'PUBLIC';
+    }
+    const status = isAdmin ? 'APPROVED' : (visibility === 'PUBLIC' ? 'PENDING' : 'APPROVED');
 
     const matchedCat = FALLBACK_CATEGORIES.find((c) => c.id === categoryId) || FALLBACK_CATEGORIES[0];
 
@@ -392,11 +403,11 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       categoryId,
       category: matchedCat,
       totalPages: 100,
-      language: 'English',
+      language,
       fileType: 'CANONICAL',
       visibility: visibility as any,
-      status: visibility === 'PUBLIC' ? 'PENDING' : 'APPROVED',
-      uploadedBy: 'usr_current',
+      status: status as any,
+      uploadedBy: currentUser?.id || 'usr_current',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       chapters: [
@@ -414,7 +425,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
               blockIndex: 1,
               type: 'PARAGRAPH',
               pageNumber: 1,
-              text: 'Welcome to your newly uploaded reading volume. This canonical paragraph is anchored and ready for notes, bookmarks, and scholar AI contemplation.',
+              text: `Opening of "${title}". This canonical text has been processed and prepared for focused reading, margin notes, and interactive AI contemplation.`,
               createdAt: new Date().toISOString()
             }
           ]

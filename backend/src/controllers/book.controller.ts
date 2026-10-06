@@ -312,10 +312,17 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
     const requestedVisibility = (req.body.visibility || 'PRIVATE').toUpperCase();
 
     // RULE:
+    // If admin uploads -> always PUBLIC and APPROVED
+    // Otherwise:
     // If PRIVATE -> status = APPROVED (owner only)
     // If PUBLIC -> status = PENDING (requires admin review)
-    const visibility = requestedVisibility === 'PUBLIC' ? Visibility.PUBLIC : Visibility.PRIVATE;
-    const status = visibility === 'PUBLIC' ? BookStatus.PENDING : BookStatus.APPROVED;
+    const isAdmin = req.user.role === 'ADMIN';
+    const visibility = isAdmin
+      ? Visibility.PUBLIC
+      : (requestedVisibility === 'PUBLIC' ? Visibility.PUBLIC : Visibility.PRIVATE);
+    const status = isAdmin
+      ? BookStatus.APPROVED
+      : (visibility === 'PUBLIC' ? BookStatus.PENDING : BookStatus.APPROVED);
 
     const book = await prisma.book.create({
       data: {
