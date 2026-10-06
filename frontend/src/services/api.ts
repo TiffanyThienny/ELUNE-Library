@@ -1,3 +1,5 @@
+import { handleFallbackRequest } from './mockFallback';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 class ApiClient {
@@ -16,25 +18,40 @@ class ApiClient {
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = this.getHeaders(options.headers as Record<string, string>);
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...headers,
-        ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      },
-    });
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...headers,
+          ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        },
+      });
 
-    const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => ({}));
 
-    if (!response.ok) {
-      if (response.status === 401) {
-        localStorage.removeItem('elune_token');
-        localStorage.removeItem('elune_user');
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('elune_token');
+          localStorage.removeItem('elune_user');
+        }
+        throw new Error(data.message || data.error || `HTTP ${response.status}`);
       }
-      throw new Error(data.message || data.error || `HTTP ${response.status}`);
-    }
 
-    return data;
+      return data;
+    } catch (err: any) {
+      // If error was returned by an active server (e.g. validation error, 401), rethrow it
+      if (
+        err.message &&
+        !err.message.includes('Failed to fetch') &&
+        !err.message.includes('NetworkError') &&
+        !err.message.includes('Load failed')
+      ) {
+        throw err;
+      }
+
+      // Network unreachable (e.g. on Vercel preview without external backend URL)
+      return handleFallbackRequest<T>(endpoint, options);
+    }
   }
 
   get<T>(endpoint: string) {

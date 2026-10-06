@@ -19,6 +19,7 @@ export interface User {
 export interface Category {
   id: string;
   name: string;
+  slug?: string;
   description?: string | null;
   _count?: {
     books: number;
