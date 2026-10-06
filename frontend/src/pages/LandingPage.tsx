@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { bookService } from '../services/api';
+import { Book } from '../types';
+import { BookCard } from '../components/BookCard';
 import {
   BookOpen,
   Headphones,
@@ -14,6 +17,18 @@ import {
 
 export const LandingPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  const [featuredBooks, setFeaturedBooks] = useState<Book[]>([]);
+
+  useEffect(() => {
+    bookService
+      .getExplore({ limit: 8 })
+      .then((res) => {
+        if (res.success && res.data?.books) {
+          setFeaturedBooks(res.data.books);
+        }
+      })
+      .catch((err) => console.error('Failed to load featured books', err));
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#2C2421]">
@@ -104,6 +119,38 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Featured Library Treatises & Books */}
+      {featuredBooks.length > 0 && (
+        <section className="px-4 py-16 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-[#E8DFD3] space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#8C7355] mb-2">
+                <Sparkles className="w-3.5 h-3.5" />
+                Curated Volumes
+              </div>
+              <h2 className="font-serif-literata text-3xl font-bold text-[#2C2421]">
+                Browse the Sanctuary Collection
+              </h2>
+              <p className="text-xs sm:text-sm text-[#665A4F] mt-1 max-w-xl">
+                Classical works prepared with paragraph anchors for immersive reading and grounded AI study.
+              </p>
+            </div>
+            <Link
+              to="/explore"
+              className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2C2421] hover:text-[#8C7355] transition-colors"
+            >
+              View Full Explore Catalog <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-6">
+            {featuredBooks.map((book) => (
+              <BookCard key={book.id} book={book} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-[#E8DFD3] py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-[#8C7355]">

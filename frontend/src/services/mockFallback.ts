@@ -159,6 +159,246 @@ export const FALLBACK_BOOKS: Book[] = [
         ]
       }
     ]
+  },
+  {
+    id: 'letters-lucilius-seneca',
+    title: 'Letters from a Stoic',
+    author: 'Lucius Annaeus Seneca',
+    categoryId: 'cat-philosophy',
+    category: FALLBACK_CATEGORIES[0],
+    description: 'Timeless moral essays and letters addressed to Lucilius on the brevity of life, tranquility, friendship, and authentic virtue.',
+    coverUrl: null,
+    totalPages: 210,
+    language: 'English',
+    fileType: 'CANONICAL',
+    visibility: 'PUBLIC',
+    status: 'APPROVED',
+    uploadedBy: 'usr_admin',
+    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
+    createdAt: '2026-01-03T00:00:00.000Z',
+    updatedAt: '2026-01-03T00:00:00.000Z',
+    chapters: [
+      {
+        id: 'ch-seneca-1',
+        bookId: 'letters-lucilius-seneca',
+        title: 'Letter I: On Saving Time',
+        chapterNumber: 1,
+        createdAt: '2026-01-03T00:00:00.000Z',
+        updatedAt: '2026-01-03T00:00:00.000Z',
+        contentBlocks: [
+          {
+            id: 'cb-sen-1-1',
+            chapterId: 'ch-seneca-1',
+            blockIndex: 1,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Continue to act thus, my dear Lucilius — set yourself free for your own sake; gather and save your time, which has hitherto been taken from you, or stolen, or has slipped away.',
+            createdAt: '2026-01-03T00:00:00.000Z'
+          },
+          {
+            id: 'cb-sen-1-2',
+            chapterId: 'ch-seneca-1',
+            blockIndex: 2,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Nothing is ours except time alone. Nature has put us in possession of this fleeting and elusive property, from which whoever desires can drive us out.',
+            createdAt: '2026-01-03T00:00:00.000Z'
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'republic-plato',
+    title: 'The Republic',
+    author: 'Plato',
+    categoryId: 'cat-philosophy',
+    category: FALLBACK_CATEGORIES[0],
+    description: 'Socratic dialogue on justice, the order and character of the ideal city-state, the Allegory of the Cave, and the philosophical soul.',
+    coverUrl: null,
+    totalPages: 340,
+    language: 'English',
+    fileType: 'CANONICAL',
+    visibility: 'PUBLIC',
+    status: 'APPROVED',
+    uploadedBy: 'usr_admin',
+    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
+    createdAt: '2026-01-04T00:00:00.000Z',
+    updatedAt: '2026-01-04T00:00:00.000Z',
+    chapters: [
+      {
+        id: 'ch-rep-1',
+        bookId: 'republic-plato',
+        title: 'Book VII: The Allegory of the Cave',
+        chapterNumber: 1,
+        createdAt: '2026-01-04T00:00:00.000Z',
+        updatedAt: '2026-01-04T00:00:00.000Z',
+        contentBlocks: [
+          {
+            id: 'cb-rep-1-1',
+            chapterId: 'ch-rep-1',
+            blockIndex: 1,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Behold! human beings living in an underground den, which has a mouth open towards the light and reaching all along the den; here they have been from their childhood.',
+            createdAt: '2026-01-04T00:00:00.000Z'
+          },
+          {
+            id: 'cb-rep-1-2',
+            chapterId: 'ch-rep-1',
+            blockIndex: 2,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'To them, I said, the truth would be literally nothing but the shadows of the images. When one is liberated and steps into the sunlight, their eyes are dazzled before perception awakens.',
+            createdAt: '2026-01-04T00:00:00.000Z'
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'art-of-war-sun-tzu',
+    title: 'The Art of War',
+    author: 'Sun Tzu',
+    categoryId: 'cat-self-dev',
+    category: FALLBACK_CATEGORIES[2],
+    description: 'Canonical military treatise offering timeless strategy on positioning, preparedness, psychological insight, and winning without conflict.',
+    coverUrl: null,
+    totalPages: 95,
+    language: 'English',
+    fileType: 'CANONICAL',
+    visibility: 'PUBLIC',
+    status: 'APPROVED',
+    uploadedBy: 'usr_admin',
+    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
+    createdAt: '2026-01-05T00:00:00.000Z',
+    updatedAt: '2026-01-05T00:00:00.000Z',
+    chapters: [
+      {
+        id: 'ch-war-1',
+        bookId: 'art-of-war-sun-tzu',
+        title: 'Chapter III: Attack by Stratagem',
+        chapterNumber: 1,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        updatedAt: '2026-01-05T00:00:00.000Z',
+        contentBlocks: [
+          {
+            id: 'cb-war-1-1',
+            chapterId: 'ch-war-1',
+            blockIndex: 1,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Hence to fight and conquer in all your battles is not supreme excellence; supreme excellence consists in breaking the enemy’s resistance without fighting.',
+            createdAt: '2026-01-05T00:00:00.000Z'
+          },
+          {
+            id: 'cb-war-1-2',
+            chapterId: 'ch-war-1',
+            blockIndex: 2,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'If you know the enemy and know yourself, you need not fear the result of a hundred battles. If you know yourself but not the enemy, for every victory gained you will also suffer a defeat.',
+            createdAt: '2026-01-05T00:00:00.000Z'
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'siddhartha-hesse',
+    title: 'Siddhartha',
+    author: 'Hermann Hesse',
+    categoryId: 'cat-literature',
+    category: FALLBACK_CATEGORIES[4],
+    description: 'A lyrical novel dealing with the spiritual journey of self-discovery of a man living in ancient India during the time of the Gautama Buddha.',
+    coverUrl: null,
+    totalPages: 160,
+    language: 'English',
+    fileType: 'CANONICAL',
+    visibility: 'PUBLIC',
+    status: 'APPROVED',
+    uploadedBy: 'usr_admin',
+    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
+    createdAt: '2026-01-06T00:00:00.000Z',
+    updatedAt: '2026-01-06T00:00:00.000Z',
+    chapters: [
+      {
+        id: 'ch-sid-1',
+        bookId: 'siddhartha-hesse',
+        title: 'The Brahmin’s Son',
+        chapterNumber: 1,
+        createdAt: '2026-01-06T00:00:00.000Z',
+        updatedAt: '2026-01-06T00:00:00.000Z',
+        contentBlocks: [
+          {
+            id: 'cb-sid-1-1',
+            chapterId: 'ch-sid-1',
+            blockIndex: 1,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'In the shade of the house, in the sunshine of the riverbank near the boats, in the shade of the Sal-wood forest, in the shade of the fig tree is where Siddhartha grew up.',
+            createdAt: '2026-01-06T00:00:00.000Z'
+          },
+          {
+            id: 'cb-sid-1-2',
+            chapterId: 'ch-sid-1',
+            blockIndex: 2,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Knowledge can be communicated, but not wisdom. One can find it, live it, be fortified by it, do wonders through it, but one cannot speak and teach it.',
+            createdAt: '2026-01-06T00:00:00.000Z'
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'discourses-epictetus',
+    title: 'Discourses and Enchiridion',
+    author: 'Epictetus',
+    categoryId: 'cat-philosophy',
+    category: FALLBACK_CATEGORIES[0],
+    description: 'Direct transcripts of the teachings of Epictetus focusing on what is within our control versus what is external, yielding freedom and tranquility.',
+    coverUrl: null,
+    totalPages: 185,
+    language: 'English',
+    fileType: 'CANONICAL',
+    visibility: 'PUBLIC',
+    status: 'APPROVED',
+    uploadedBy: 'usr_admin',
+    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
+    createdAt: '2026-01-07T00:00:00.000Z',
+    updatedAt: '2026-01-07T00:00:00.000Z',
+    chapters: [
+      {
+        id: 'ch-epi-1',
+        bookId: 'discourses-epictetus',
+        title: 'Of the Things which are in Our Power',
+        chapterNumber: 1,
+        createdAt: '2026-01-07T00:00:00.000Z',
+        updatedAt: '2026-01-07T00:00:00.000Z',
+        contentBlocks: [
+          {
+            id: 'cb-epi-1-1',
+            chapterId: 'ch-epi-1',
+            blockIndex: 1,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Some things are in our control and others not. Things in our control are opinion, pursuit, desire, aversion, and, in a word, whatever are our own actions.',
+            createdAt: '2026-01-07T00:00:00.000Z'
+          },
+          {
+            id: 'cb-epi-1-2',
+            chapterId: 'ch-epi-1',
+            blockIndex: 2,
+            type: 'PARAGRAPH',
+            pageNumber: 1,
+            text: 'Things not in our control are body, property, reputation, command, and, in one word, whatever are not our own actions. Men are disturbed not by things, but by the view which they take of them.',
+            createdAt: '2026-01-07T00:00:00.000Z'
+          }
+        ]
+      }
+    ]
   }
 ];
 
@@ -739,10 +979,13 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
   }
 
   if (path === '/api/admin/books/pending' && method === 'GET') {
-    return {
-      success: true,
-      data: {
-        pendingBooks: [
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const pendingFromUploads = userUploads.filter((b) => b.status === 'PENDING');
+    
+    // Seed sample pending item if user hasn't submitted yet
+    const pendingBooks = pendingFromUploads.length > 0
+      ? pendingFromUploads
+      : [
           {
             id: 'deep-work-focus',
             title: 'Deep Work and Peaceful Focus',
@@ -751,10 +994,137 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
             visibility: 'PUBLIC',
             status: 'PENDING',
             uploader: { id: 'usr_standard', name: 'Marcus Chen', email: 'user@elune.read' },
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            chapters: [
+              {
+                id: 'ch-dw-1',
+                bookId: 'deep-work-focus',
+                chapterNumber: 1,
+                title: 'Deep Work as a Superpower',
+                contentBlocks: [
+                  {
+                    id: 'cb-dw-1-1',
+                    chapterId: 'ch-dw-1',
+                    blockIndex: 1,
+                    type: 'PARAGRAPH',
+                    pageNumber: 1,
+                    text: 'The ability to perform deep work is becoming increasingly rare at exactly the same time it is becoming increasingly valuable in our economy.',
+                    createdAt: new Date().toISOString()
+                  }
+                ]
+              }
+            ]
+          }
+        ];
+
+    return {
+      success: true,
+      data: { pendingBooks }
+    } as T;
+  }
+
+  // Admin Review Book (Approve or Reject)
+  const reviewMatch = path.match(/^\/api\/admin\/books\/([^\/]+)\/review$/);
+  if (reviewMatch && method === 'POST') {
+    const bookId = reviewMatch[1];
+    const body = options.body ? JSON.parse(options.body as string) : {};
+    const rawAction = String(body.action || '').toUpperCase();
+    const isApprove = rawAction === 'APPROVE' || rawAction === 'APPROVED';
+    const rejectionReason = body.rejectionReason;
+
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    let target = userUploads.find((b) => b.id === bookId);
+
+    if (!target) {
+      // If it was the sample pending book, create it now
+      target = {
+        id: bookId,
+        title: 'Deep Work and Peaceful Focus',
+        author: 'Kaelen Mori',
+        description: 'Submitted by user for public catalog review. Examines cognitive endurance and ritualized concentration.',
+        categoryId: 'cat-self-dev',
+        category: FALLBACK_CATEGORIES[2],
+        totalPages: 110,
+        language: 'English',
+        fileType: 'CANONICAL',
+        visibility: 'PUBLIC',
+        status: isApprove ? 'APPROVED' : 'REJECTED',
+        rejectionReason: isApprove ? undefined : (rejectionReason || 'Did not meet editorial standard.'),
+        uploadedBy: 'usr_standard',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        chapters: [
+          {
+            id: `ch-${bookId}-1`,
+            bookId,
+            chapterNumber: 1,
+            title: 'Deep Work as a Superpower',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            contentBlocks: [
+              {
+                id: `cb-${bookId}-1-1`,
+                chapterId: `ch-${bookId}-1`,
+                blockIndex: 1,
+                type: 'PARAGRAPH',
+                pageNumber: 1,
+                text: 'The ability to perform deep work is becoming increasingly rare at exactly the same time it is becoming increasingly valuable in our economy.',
+                createdAt: new Date().toISOString()
+              }
+            ]
           }
         ]
+      };
+      userUploads.unshift(target);
+    } else {
+      if (isApprove) {
+        target.status = 'APPROVED';
+        target.visibility = 'PUBLIC'; // ALWAYS PUBLIC when approved by admin!
+      } else {
+        target.status = 'REJECTED';
+        target.rejectionReason = rejectionReason || 'Content did not meet editorial guidelines.';
       }
+    }
+
+    localStorage.setItem('elune_user_uploads', JSON.stringify(userUploads));
+
+    return {
+      success: true,
+      data: { book: target },
+      message: isApprove
+        ? 'Book approved and published to public explore catalog'
+        : 'Book submission rejected'
+    } as T;
+  }
+
+  // Admin Toggle Book Visibility (Public <-> Private)
+  const toggleVisibilityMatch = path.match(/^\/api\/admin\/books\/([^\/]+)\/toggle-visibility$/);
+  if (toggleVisibilityMatch && method === 'POST') {
+    const bookId = toggleVisibilityMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    let target = userUploads.find((b) => b.id === bookId);
+
+    if (!target) {
+      const fb = FALLBACK_BOOKS.find((b) => b.id === bookId);
+      if (fb) {
+        target = JSON.parse(JSON.stringify(fb));
+        userUploads.unshift(target!);
+      }
+    }
+
+    if (target) {
+      const newVisibility = target.visibility === 'PUBLIC' ? 'PRIVATE' : 'PUBLIC';
+      target.visibility = newVisibility as any;
+      if (newVisibility === 'PUBLIC') {
+        target.status = 'APPROVED'; // When set to public, guarantee status is APPROVED!
+      }
+      localStorage.setItem('elune_user_uploads', JSON.stringify(userUploads));
+    }
+
+    return {
+      success: true,
+      data: { book: target },
+      message: `Book visibility changed to ${target?.visibility}`
     } as T;
   }
 

@@ -23,6 +23,24 @@ export const AdminBooksPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleToggleVisibility = async (bookId: string) => {
+    setActionLoading(bookId);
+    try {
+      const res = await adminService.toggleVisibility(bookId);
+      if (res.success && res.data?.book) {
+        setBooks((prev) =>
+          prev.map((b) => (b.id === bookId ? { ...b, ...res.data.book } : b))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to toggle visibility', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="flex min-h-[calc(100vh-4rem)] bg-[#FAF7F2]">
       <AdminSidebar />
@@ -81,7 +99,7 @@ export const AdminBooksPage: React.FC = () => {
                             <Lock className="w-2.5 h-2.5" /> Private
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
                             <Globe className="w-2.5 h-2.5" /> Public
                           </span>
                         )}
@@ -99,7 +117,22 @@ export const AdminBooksPage: React.FC = () => {
                           {b.status}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-4 text-right space-x-2">
+                        <button
+                          onClick={() => handleToggleVisibility(b.id)}
+                          disabled={actionLoading === b.id}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                            b.visibility === 'PUBLIC' && b.status === 'APPROVED'
+                              ? 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
+                        >
+                          {actionLoading === b.id
+                            ? '...'
+                            : b.visibility === 'PUBLIC' && b.status === 'APPROVED'
+                            ? 'Set Private'
+                            : 'Publish to Public'}
+                        </button>
                         <Link
                           to={`/book/${b.id}`}
                           className="font-semibold text-[#8C7355] hover:text-[#2C2421]"

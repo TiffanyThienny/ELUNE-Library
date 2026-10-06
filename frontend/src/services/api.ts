@@ -251,6 +251,9 @@ export const adminService = {
 
   reviewBook: (bookId: string, data: { action: 'APPROVE' | 'REJECT'; rejectionReason?: string }) =>
     api.post<{ success: boolean; data: { book: any }; message: string }>(`/api/admin/books/${bookId}/review`, data),
+
+  toggleVisibility: (bookId: string) =>
+    api.post<{ success: boolean; data: { book: any }; message: string }>(`/api/admin/books/${bookId}/toggle-visibility`),
 };
 
 // Category Service

@@ -3,6 +3,7 @@ import {
   getStatistics,
   getPendingBooks,
   reviewBook,
+  toggleBookVisibility,
   getAllBooks,
   getUsers,
   updateUserRole
@@ -19,6 +20,7 @@ router.use(authorizeRole([Role.ADMIN]));
 router.get('/statistics', getStatistics);
 router.get('/books/pending', getPendingBooks);
 router.post('/books/:id/review', reviewBook);
+router.post('/books/:id/toggle-visibility', toggleBookVisibility);
 router.get('/books', getAllBooks);
 router.get('/users', getUsers);
 router.put('/users/:id/role', updateUserRole);

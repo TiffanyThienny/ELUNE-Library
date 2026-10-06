@@ -78,7 +78,7 @@ export const getPendingBooks = async (_req: Request, res: Response): Promise<voi
 export const reviewBook = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { action, notes } = req.body; // action: 'APPROVED' | 'REJECTED'
+    const { action, notes } = req.body;
     const reviewerId = req.user?.id;
 
     if (!reviewerId) {
@@ -86,8 +86,12 @@ export const reviewBook = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    if (!['APPROVED', 'REJECTED'].includes(action)) {
-      sendError(res, 'Action must be APPROVED or REJECTED', 'VALIDATION_ERROR', 400);
+    const rawAction = String(action || '').toUpperCase();
+    const isApproved = rawAction === 'APPROVE' || rawAction === 'APPROVED';
+    const isRejected = rawAction === 'REJECT' || rawAction === 'REJECTED';
+
+    if (!isApproved && !isRejected) {
+      sendError(res, 'Action must be APPROVE or REJECT', 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -96,8 +100,6 @@ export const reviewBook = async (req: Request, res: Response): Promise<void> => 
       sendError(res, 'Book not found', 'NOT_FOUND', 404);
       return;
     }
-
-    const isApproved = action === 'APPROVED';
 
     const [updatedBook, reviewRecord] = await prisma.$transaction([
       prisma.book.update({
@@ -121,11 +123,38 @@ export const reviewBook = async (req: Request, res: Response): Promise<void> => 
     sendSuccess(
       res,
       { book: updatedBook, review: reviewRecord },
-      `Book has been ${action.toLowerCase()} successfully`
+      `Book has been ${isApproved ? 'approved' : 'rejected'} successfully`
     );
   } catch (error: any) {
     console.error('reviewBook error:', error);
     sendError(res, 'Failed to review book', error.message, 500);
+  }
+};
+
+export const toggleBookVisibility = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.book.findUnique({ where: { id } });
+    if (!existing) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    const newVisibility = existing.visibility === Visibility.PUBLIC ? Visibility.PRIVATE : Visibility.PUBLIC;
+    const newStatus = newVisibility === Visibility.PUBLIC ? BookStatus.APPROVED : existing.status;
+
+    const updated = await prisma.book.update({
+      where: { id },
+      data: {
+        visibility: newVisibility,
+        status: newStatus
+      }
+    });
+
+    sendSuccess(res, { book: updated }, `Book visibility updated to ${newVisibility}`);
+  } catch (error: any) {
+    console.error('toggleBookVisibility error:', error);
+    sendError(res, 'Failed to update visibility', error.message, 500);
   }
 };
 
