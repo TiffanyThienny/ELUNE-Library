@@ -39,12 +39,12 @@ export const Navbar: React.FC = () => {
             <div className="w-10 h-10 rounded-xl bg-[#2C2421] text-[#FAF7F2] flex items-center justify-center font-serif-literata font-bold text-xl shadow-sm transition-transform group-hover:scale-105">
               É
             </div>
-            <div>
+            <div className="flex flex-col sm:flex-row sm:items-baseline">
               <span className="font-serif-literata text-2xl font-bold tracking-tight text-[#2C2421]">
                 ELUNÈ
               </span>
-              <span className="hidden sm:inline-block ml-2 text-xs uppercase tracking-widest text-[#8C7355] font-medium">
-                Library
+              <span className="inline-block sm:ml-2 text-[10px] sm:text-xs uppercase tracking-widest text-[#8C7355] font-semibold">
+                LIBRARY
               </span>
             </div>
           </Link>
@@ -203,12 +203,14 @@ export const Navbar: React.FC = () => {
               </div>
             ) : (
               <div className="flex items-center space-x-2">
-                <Link
-                  to="/login"
-                  className="px-4 py-2 text-sm font-medium text-[#2C2421] hover:text-[#8C7355] transition-colors"
-                >
-                  Sign In
-                </Link>
+                {!isActive('/login') && (
+                  <Link
+                    to="/login"
+                    className="px-4 py-2 text-sm font-medium text-[#2C2421] hover:text-[#8C7355] transition-colors"
+                  >
+                    Sign In
+                  </Link>
+                )}
                 <Link
                   to="/register"
                   className="px-4 py-2 text-sm font-semibold text-white bg-[#2C2421] hover:bg-[#433832] rounded-xl shadow-sm transition-all"
@@ -309,13 +311,15 @@ export const Navbar: React.FC = () => {
             </>
           ) : (
             <div className="pt-2 flex flex-col space-y-2">
-              <Link
-                to="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full text-center px-4 py-2 border border-[#8C7355] text-[#2C2421] rounded-xl font-medium"
-              >
-                Sign In
-              </Link>
+              {!isActive('/login') && (
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full text-center px-4 py-2 border border-[#8C7355] text-[#2C2421] rounded-xl font-medium"
+                >
+                  Sign In
+                </Link>
+              )}
               <Link
                 to="/register"
                 onClick={() => setMobileMenuOpen(false)}

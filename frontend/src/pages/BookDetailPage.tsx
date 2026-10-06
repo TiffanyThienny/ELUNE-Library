@@ -13,6 +13,7 @@ import {
   Lock,
   Globe,
   Clock,
+  CheckCircle2,
   ArrowLeft,
   Share2,
 } from 'lucide-react';
@@ -60,9 +61,18 @@ export const BookDetailPage: React.FC = () => {
     }
   }, [bookId, isAuthenticated]);
 
+  const handleReadBook = () => {
+    if (!book) return;
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: { pathname: `/read/${book.id}` } } });
+      return;
+    }
+    navigate(`/read/${book.id}`);
+  };
+
   const handleToggleLibrary = async () => {
     if (!isAuthenticated) {
-      navigate('/login');
+      navigate('/login', { state: { from: { pathname: `/book/${book?.id}` } } });
       return;
     }
     if (!book) return;
@@ -173,6 +183,11 @@ export const BookDetailPage: React.FC = () => {
                   <Clock className="w-3 h-3" /> Pending Review
                 </span>
               )}
+              {book.status === 'APPROVED' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-700 text-white">
+                  <CheckCircle2 className="w-3 h-3" /> Available
+                </span>
+              )}
             </div>
 
             <h1 className="font-serif-literata text-3xl sm:text-4xl font-bold text-[#2C2421] leading-tight">
@@ -206,13 +221,13 @@ export const BookDetailPage: React.FC = () => {
 
           {/* Action CTAs */}
           <div className="pt-2 flex flex-wrap gap-3">
-            <Link
-              to={`/read/${book.id}`}
-              className="px-6 py-3 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs sm:text-sm font-semibold shadow-xs transition-all flex items-center gap-2"
+            <button
+              onClick={handleReadBook}
+              className="px-6 py-3 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs sm:text-sm font-semibold shadow-xs transition-all flex items-center gap-2 cursor-pointer"
             >
               <BookOpen className="w-4 h-4" />
-              Open in Reader
-            </Link>
+              Read Book
+            </button>
 
             <button
               onClick={handleToggleLibrary}
@@ -278,12 +293,12 @@ export const BookDetailPage: React.FC = () => {
                     {chap.title}
                   </span>
                 </div>
-                <Link
-                  to={`/read/${book.id}`}
-                  className="text-xs font-semibold text-[#8C7355] hover:text-[#2C2421]"
+                <button
+                  onClick={handleReadBook}
+                  className="text-xs font-semibold text-[#8C7355] hover:text-[#2C2421] cursor-pointer"
                 >
                   Read →
-                </Link>
+                </button>
               </div>
             ))}
           </div>

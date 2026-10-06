@@ -79,7 +79,7 @@ export const getBooks = async (req: Request, res: Response): Promise<void> => {
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
     const search = (req.query.search as string)?.trim();
-    const categorySlug = (req.query.category as string)?.trim();
+    const categoryQuery = ((req.query.categoryId || req.query.category) as string)?.trim();
     const author = (req.query.author as string)?.trim();
     const sort = (req.query.sort as string) || 'latest';
 
@@ -91,25 +91,35 @@ export const getBooks = async (req: Request, res: Response): Promise<void> => {
       status: BookStatus.APPROVED
     };
 
+    const conditions: any[] = [];
+
     if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { author: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } }
-      ];
+      conditions.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { author: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+          { category: { name: { contains: search, mode: 'insensitive' } } }
+        ]
+      });
     }
 
     if (author) {
-      where.author = { contains: author, mode: 'insensitive' };
+      conditions.push({ author: { contains: author, mode: 'insensitive' } });
     }
 
-    if (categorySlug && categorySlug !== 'all') {
-      where.category = {
+    if (categoryQuery && categoryQuery !== 'all') {
+      conditions.push({
         OR: [
-          { slug: { equals: categorySlug.toLowerCase() } },
-          { name: { contains: categorySlug, mode: 'insensitive' } }
+          { categoryId: categoryQuery },
+          { category: { slug: { equals: categoryQuery.toLowerCase() } } },
+          { category: { name: { contains: categoryQuery, mode: 'insensitive' } } }
         ]
-      };
+      });
+    }
+
+    if (conditions.length > 0) {
+      where.AND = conditions;
     }
 
     let orderBy: any = { createdAt: 'desc' };
@@ -206,6 +216,17 @@ export const getBookById = async (req: Request, res: Response): Promise<void> =>
 
       if (!isOwner && !isAdmin) {
         sendError(res, 'Access denied. This is a private book accessible only to its owner.', 'FORBIDDEN', 403);
+        return;
+      }
+    }
+
+    // CHECK NON-APPROVED STATUS ACCESS
+    if (book.status !== BookStatus.APPROVED) {
+      const isOwner = req.user && req.user.id === book.uploadedBy;
+      const isAdmin = req.user && req.user.role === 'ADMIN';
+
+      if (!isOwner && !isAdmin) {
+        sendError(res, 'This book is not publicly available.', 'FORBIDDEN', 403);
         return;
       }
     }

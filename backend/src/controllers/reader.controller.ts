@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
-import { Visibility } from '@prisma/client';
+import { Visibility, BookStatus } from '@prisma/client';
 
 export const getReaderData = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -45,6 +45,17 @@ export const getReaderData = async (req: Request, res: Response): Promise<void> 
 
       if (!isOwner && !isAdmin) {
         sendError(res, 'Access denied. This is a private book.', 'FORBIDDEN', 403);
+        return;
+      }
+    }
+
+    // Check non-approved book access
+    if (book.status !== BookStatus.APPROVED) {
+      const isOwner = userId && userId === book.uploadedBy;
+      const isAdmin = req.user && req.user.role === 'ADMIN';
+
+      if (!isOwner && !isAdmin) {
+        sendError(res, 'This book is not approved for reading.', 'FORBIDDEN', 403);
         return;
       }
     }

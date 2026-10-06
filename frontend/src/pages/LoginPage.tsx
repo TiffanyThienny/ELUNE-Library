@@ -30,16 +30,6 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const setDemoCredentials = (role: 'user' | 'admin') => {
-    if (role === 'admin') {
-      setEmail('admin@elune.read');
-      setPassword('admin123');
-    } else {
-      setEmail('demo@elune.read');
-      setPassword('password123');
-    }
-  };
-
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-[#FAF7F2]">
       <div className="w-full max-w-md bg-white border border-[#E8DFD3] rounded-3xl p-8 shadow-xs">
@@ -48,7 +38,7 @@ export const LoginPage: React.FC = () => {
             É
           </div>
           <h2 className="font-serif-literata font-bold text-2xl text-[#2C2421]">Welcome Back</h2>
-          <p className="text-xs text-[#8C7355] mt-1">Sign in to your Elunè reading sanctuary</p>
+          <p className="text-xs text-[#8C7355] mt-1">Sign in to continue reading.</p>
         </div>
 
         {error && (
@@ -68,7 +58,7 @@ export const LoginPage: React.FC = () => {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="Enter your email"
               className="w-full px-4 py-2.5 rounded-xl border border-[#E8DFD3] bg-[#FAF7F2] text-xs text-[#2C2421] focus:outline-hidden focus:border-[#8C7355]"
             />
           </div>
@@ -82,7 +72,7 @@ export const LoginPage: React.FC = () => {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Enter your password"
               className="w-full px-4 py-2.5 rounded-xl border border-[#E8DFD3] bg-[#FAF7F2] text-xs text-[#2C2421] focus:outline-hidden focus:border-[#8C7355]"
             />
           </div>
@@ -103,31 +93,8 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        {/* Demo Quick Logins */}
-        <div className="mt-6 pt-6 border-t border-[#F2ECE1]">
-          <p className="text-[11px] font-bold text-[#8C7355] uppercase tracking-wider mb-2 text-center">
-            Demo Credentials
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setDemoCredentials('user')}
-              className="px-3 py-1.5 border border-[#E8DFD3] rounded-xl text-[11px] font-medium text-[#2C2421] hover:bg-[#FAF7F2] transition-colors"
-            >
-              Demo Reader
-            </button>
-            <button
-              type="button"
-              onClick={() => setDemoCredentials('admin')}
-              className="px-3 py-1.5 border border-[#E8DFD3] rounded-xl text-[11px] font-medium text-amber-900 bg-amber-50/50 hover:bg-amber-100/50 transition-colors"
-            >
-              Demo Admin
-            </button>
-          </div>
-        </div>
-
         <div className="mt-6 text-center text-xs text-[#665A4F]">
-          Don't have an account yet?{' '}
+          Don't have an account?{' '}
           <Link to="/register" className="font-semibold text-[#2C2421] hover:underline">
             Register here
           </Link>

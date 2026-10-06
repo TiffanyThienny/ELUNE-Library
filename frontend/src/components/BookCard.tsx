@@ -121,18 +121,17 @@ export const BookCard: React.FC<BookCardProps> = ({
         </div>
 
         {/* Action Link */}
-        <div className="mt-4 pt-3 border-t border-[#F2ECE1] flex items-center justify-between">
-          {progressPercentage !== undefined && progressPercentage > 0 ? (
-            <span className="text-[11px] font-medium text-[#8C7355]">
-              {progressPercentage}% completed
-            </span>
-          ) : (
-            <span className="text-[11px] text-[#A69888] font-normal">Unread</span>
-          )}
+        <div className="mt-4 pt-3 border-t border-[#F2ECE1] flex items-center justify-between gap-2">
+          <Link
+            to={`/book/${book.id}`}
+            className="text-xs font-semibold text-[#665A4F] hover:text-[#2C2421] transition-colors"
+          >
+            View Book
+          </Link>
 
           <Link
             to={`/read/${book.id}`}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-[#2C2421] hover:text-[#8C7355] transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#2C2421] text-white text-xs font-semibold hover:bg-[#433832] transition-colors"
           >
             <BookOpen className="w-3.5 h-3.5" />
             Read
