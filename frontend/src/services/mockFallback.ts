@@ -694,31 +694,16 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       }
     }
 
+    const isScanned =
+      (options.body instanceof FormData && options.body.get('isScanned') === 'true') ||
+      chapters.length === 0;
+
     const matchedCat = FALLBACK_CATEGORIES.find((c) => c.id === categoryId) || FALLBACK_CATEGORIES[0];
     const newBookId = `uploaded-${Date.now()}`;
 
-    if (chapters.length === 0) {
-      chapters = [
-        {
-          id: `ch-up-${Date.now()}-1`,
-          bookId: newBookId,
-          chapterNumber: 1,
-          title: 'Chapter 1: Opening Passages',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          contentBlocks: [
-            {
-              id: `cb-up-${Date.now()}-1`,
-              chapterId: `ch-up-${Date.now()}-1`,
-              blockIndex: 1,
-              type: 'PARAGRAPH',
-              pageNumber: 1,
-              text: `Opening of "${title}". This canonical text has been processed and prepared for focused reading, margin notes, and interactive AI contemplation.`,
-              createdAt: new Date().toISOString(),
-            },
-          ],
-        },
-      ];
+    // If document is scanned or has no extracted text, keep chapters empty (NO FAKE TEXT)
+    if (isScanned) {
+      chapters = [];
     }
 
     const newBook: Book = {
@@ -734,6 +719,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       fileType: 'CANONICAL',
       visibility: finalVisibility as any,
       status: status as any,
+      isScanned: isScanned,
       uploadedBy: currentUser?.id || currentUser?.email || 'usr_standard',
       uploader: {
         id: currentUser?.id || 'usr_standard',

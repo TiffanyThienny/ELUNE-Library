@@ -50,6 +50,7 @@ export interface Book {
   createdAt: string;
   updatedAt: string;
   chapters?: Chapter[];
+  isScanned?: boolean;
   _count?: {
     bookmarks?: number;
     notes?: number;

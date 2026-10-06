@@ -99,6 +99,16 @@ export const ReaderPage: React.FC = () => {
     xl: 'text-xl sm:text-2xl leading-loose',
   }[fontSize];
 
+  const isScannedDocument = Boolean(
+    book?.isScanned ||
+    chapters.length === 0 ||
+    !currentChapter ||
+    !currentChapter.contentBlocks ||
+    currentChapter.contentBlocks.length === 0 ||
+    (currentChapter.contentBlocks.length === 1 &&
+      currentChapter.contentBlocks[0].text.includes('was uploaded successfully. (Total scanned/detected pages:'))
+  );
+
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex flex-col">
       {/* Reader Sub-Header */}
@@ -171,74 +181,86 @@ export const ReaderPage: React.FC = () => {
             <div>
               <div className="text-center pb-8 border-b border-[#F2ECE1] mb-8">
                 <span className="text-[11px] font-mono uppercase tracking-widest text-[#8C7355] font-bold">
-                  Chapter {currentChapter?.chapterNumber || 1} • Page {currentPage}
+                  {isScannedDocument
+                    ? `Document Archive • ${book.totalPages} Pages`
+                    : `Chapter ${currentChapter?.chapterNumber || 1} • Page ${currentPage}`}
                 </span>
                 <h1 className="font-serif-literata text-2xl sm:text-3xl font-bold text-[#2C2421] mt-2">
-                  {currentChapter?.title || 'Untitled Chapter'}
+                  {isScannedDocument ? book.title : (currentChapter?.title || 'Untitled Chapter')}
                 </h1>
               </div>
 
               {/* Paragraphs / Content Blocks */}
               <div className="space-y-6">
-                {currentChapter?.contentBlocks && currentChapter.contentBlocks.length > 0 ? (
-                  currentChapter.contentBlocks.map((block) => {
-                    const bookmarked = isBookmarked(block.id);
-                    const note = getNote(block.id);
-
-                    return (
-                      <div
-                        key={block.id}
-                        id={`content-block-${block.id}`}
-                        onClick={() => jumpToParagraph(block.id, false)}
-                        className={`group relative transition-all duration-200 ${
-                          bookmarked
-                            ? 'bg-[#F4EBD9]/80 border-l-4 border-[#8C7355] rounded-2xl p-4 shadow-xs my-3'
-                            : 'p-2 rounded-xl my-1 hover:bg-[#FAF7F2]/60'
-                        }`}
-                      >
-                        {/* Hover Annotation Bar (Bookmark + Note) */}
-                        <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur-xs border border-[#E8DFD3] rounded-xl p-0.5 shadow-xs flex items-center gap-1 z-10">
-                          <BookmarkButton
-                            contentBlockId={block.id}
-                            pageNumber={block.pageNumber || currentPage}
-                          />
-                          <NoteButton
-                            contentBlockId={block.id}
-                            pageNumber={block.pageNumber || currentPage}
-                          />
-                        </div>
-
-                        {/* Indicators for existing bookmark/note */}
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          {bookmarked && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#8C7355] bg-[#EBDDC8] px-2 py-0.5 rounded-full">
-                              <Bookmark className="w-2.5 h-2.5 fill-current" /> Bookmarked
-                            </span>
-                          )}
-                          {note && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-stone-700 bg-stone-200 px-2 py-0.5 rounded-full">
-                              <FileText className="w-2.5 h-2.5" /> Note
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Paragraph Text */}
-                        <p className={`font-serif-literata text-[#2C2421] text-justify ${fontClass}`}>
-                          {block.text}
-                        </p>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="py-16 text-center space-y-3 bg-[#FAF7F2] rounded-2xl p-6 border border-[#E8DFD3]">
-                    <FileText className="w-8 h-8 text-[#8C7355] mx-auto opacity-70" />
-                    <h3 className="text-sm font-bold text-[#2C2421]">
+                {isScannedDocument ? (
+                  <div className="py-16 text-center space-y-4 bg-[#FAF7F2] rounded-3xl p-8 border border-[#E8DFD3] max-w-xl mx-auto my-6">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-100/70 text-amber-800 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
+                      <FileText className="w-7 h-7 text-[#8C7355]" />
+                    </div>
+                    <h3 className="font-serif-literata text-2xl font-bold text-[#2C2421]">
                       This PDF could not be converted into readable text.
                     </h3>
-                    <p className="text-xs text-[#665A4F] max-w-md mx-auto leading-relaxed">
-                      This may happen with scanned or image-only PDFs without digital text streams.
+                    <p className="text-xs sm:text-sm text-[#665A4F] max-w-md mx-auto leading-relaxed">
+                      This may happen with scanned or image-only PDFs that do not contain an embedded digital text layer.
                     </p>
+                    <div className="pt-4 border-t border-[#E8DFD3] text-xs text-[#8C7355] space-y-1">
+                      <p className="font-semibold text-stone-700">Text extraction unavailable for this PDF.</p>
+                      <p className="text-[#A69888]">
+                        AI Summarization, Q&A, and Audio Text-to-Speech require selectable digital text.
+                      </p>
+                    </div>
                   </div>
+                ) : (
+                  currentChapter?.contentBlocks && currentChapter.contentBlocks.length > 0 ? (
+                    currentChapter.contentBlocks.map((block) => {
+                      const bookmarked = isBookmarked(block.id);
+                      const note = getNote(block.id);
+
+                      return (
+                        <div
+                          key={block.id}
+                          id={`content-block-${block.id}`}
+                          onClick={() => jumpToParagraph(block.id, false)}
+                          className={`group relative transition-all duration-200 ${
+                            bookmarked
+                              ? 'bg-[#F4EBD9]/80 border-l-4 border-[#8C7355] rounded-2xl p-4 shadow-xs my-3'
+                              : 'p-2 rounded-xl my-1 hover:bg-[#FAF7F2]/60'
+                          }`}
+                        >
+                          {/* Hover Annotation Bar (Bookmark + Note) */}
+                          <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur-xs border border-[#E8DFD3] rounded-xl p-0.5 shadow-xs flex items-center gap-1 z-10">
+                            <BookmarkButton
+                              contentBlockId={block.id}
+                              pageNumber={block.pageNumber || currentPage}
+                            />
+                            <NoteButton
+                              contentBlockId={block.id}
+                              pageNumber={block.pageNumber || currentPage}
+                            />
+                          </div>
+
+                          {/* Indicators for existing bookmark/note */}
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            {bookmarked && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#8C7355] bg-[#EBDDC8] px-2 py-0.5 rounded-full">
+                                <Bookmark className="w-2.5 h-2.5 fill-current" /> Bookmarked
+                              </span>
+                            )}
+                            {note && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-stone-700 bg-stone-200 px-2 py-0.5 rounded-full">
+                                <FileText className="w-2.5 h-2.5" /> Note
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Paragraph Text */}
+                          <p className={`font-serif-literata text-[#2C2421] text-justify ${fontClass}`}>
+                            {block.text}
+                          </p>
+                        </div>
+                      );
+                    })
+                  ) : null
                 )}
               </div>
             </div>

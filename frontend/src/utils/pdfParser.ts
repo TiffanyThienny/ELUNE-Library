@@ -1,8 +1,10 @@
 import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 
-// Configure pdfjs worker to use CDN matching the installed version
+// Configure pdfjs worker to use local bundled worker (avoids CORS & CDN issues)
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 }
 
 export interface ExtractedParagraphBlock {
@@ -22,42 +24,96 @@ export interface ExtractedBookData {
   title: string;
   totalPages: number;
   chapters: ExtractedChapterData[];
+  isScanned?: boolean;
+  totalTextChars?: number;
 }
 
 /**
- * Extract text from PDF file and group into chapters and paragraphs
+ * Extract text from PDF file and group into real chapters and paragraphs
  */
-export async function parsePdfFile(file: File): Promise<ExtractedBookData> {
+export async function parsePdfFile(
+  file: File,
+  onProgress?: (current: number, total: number) => void
+): Promise<ExtractedBookData> {
   const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    useSystemFonts: true,
+    isEvalSupported: false,
+  });
   const pdfDoc = await loadingTask.promise;
   const numPages = pdfDoc.numPages || 1;
 
   const pageTexts: { page: number; text: string }[] = [];
+  let totalExtractedChars = 0;
 
-  for (let i = 1; i <= numPages; i++) {
-    try {
-      const page = await pdfDoc.getPage(i);
-      const textContent = await page.getTextContent();
-      const strings = textContent.items
-        .map((item: any) => item.str || '')
-        .filter((str: string) => str.trim().length > 0);
+  // Process pages in small concurrent batches for speed
+  const BATCH_SIZE = 5;
+  for (let i = 1; i <= numPages; i += BATCH_SIZE) {
+    const batch = [];
+    for (let j = i; j < Math.min(i + BATCH_SIZE, numPages + 1); j++) {
+      batch.push(
+        (async (pNum: number) => {
+          try {
+            const page = await pdfDoc.getPage(pNum);
+            const textContent = await page.getTextContent();
+            let pageStr = '';
+            let lastY: number | null = null;
 
-      // Join items with appropriate spaces
-      const pageFullText = strings.join(' ').replace(/\s+/g, ' ').trim();
-      if (pageFullText.length > 0) {
-        pageTexts.push({ page: i, text: pageFullText });
+            for (const item of textContent.items as any[]) {
+              if (!item.str) continue;
+              // Detect line break from Y coordinate shift
+              if (lastY !== null && Math.abs(item.transform[5] - lastY) > 8) {
+                pageStr += '\n';
+              } else if (pageStr.length > 0 && !pageStr.endsWith(' ') && !pageStr.endsWith('\n')) {
+                pageStr += ' ';
+              }
+              pageStr += item.str;
+              lastY = item.transform ? item.transform[5] : null;
+            }
+
+            const cleanStr = pageStr.trim();
+            return { page: pNum, text: cleanStr };
+          } catch (err) {
+            console.warn(`Could not extract page ${pNum}`, err);
+            return { page: pNum, text: '' };
+          }
+        })(j)
+      );
+    }
+
+    const batchResults = await Promise.all(batch);
+    for (const r of batchResults) {
+      if (r.text.length > 0) {
+        pageTexts.push(r);
+        totalExtractedChars += r.text.length;
       }
-    } catch (e) {
-      console.warn(`Could not extract page ${i}`, e);
+    }
+
+    if (onProgress) {
+      onProgress(Math.min(i + BATCH_SIZE - 1, numPages), numPages);
     }
   }
 
+  pageTexts.sort((a, b) => a.page - b.page);
   const cleanTitle = file.name.replace(/\.(pdf|epub|txt)$/i, '').replace(/[_-]/g, ' ');
 
-  // Group into chapters
+  // SCANNED / IMAGE-ONLY PDF DETECTION:
+  // If fewer than 50 characters were extracted across the entire document,
+  // it is an image-only / scanned PDF. DO NOT generate fake dummy text!
+  if (totalExtractedChars < 50 || pageTexts.length === 0) {
+    return {
+      title: cleanTitle,
+      totalPages: numPages,
+      chapters: [], // Strict: No fake text!
+      isScanned: true,
+      totalTextChars: totalExtractedChars,
+    };
+  }
+
+  // GROUP EXTRACTED TEXT INTO CHAPTERS & PARAGRAPHS
   const chapters: ExtractedChapterData[] = [];
-  const chapterRegex = /(?:^|\s)(?:Chapter\s+(\d+|[IVXLCDM]+)|CHAPTER\s+(\d+|[IVXLCDM]+)|Bab\s+(\d+))[:\s.-]*(.*?)(?=\s|$)/i;
+  const chapterRegex = /(?:^|\n)\s*(?:(?:BAB|Bab|CHAPTER|Chapter|Bagian|BAGIAN|Part|PART|Book|BOOK)\s+([0-9IVXLCDM]+)|(?:\b(?:PENDAHULUAN|PENGANTAR|PRAKATA|PROLOGUE|EPILOGUE|KESIMPULAN|KATA PENGANTAR)\b))[:\s.-]*(.*?)(?=\n|$)/i;
 
   let currentChapterNumber = 1;
   let currentChapterTitle = 'Chapter 1: Opening';
@@ -65,23 +121,21 @@ export async function parsePdfFile(file: File): Promise<ExtractedBookData> {
   let blockCounter = 1;
 
   for (const { page, text } of pageTexts) {
-    // Split page text into sentences/paragraphs (every ~200-400 characters or double space)
+    // Split into distinct paragraphs (by double newlines or single newline if line ends with punctuation)
     const rawParagraphs = text
-      .split(/(?<=[.?!])\s{2,}|(?<=[.?!])\s+(?=[A-Z0-9"'])/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 15);
+      .split(/\n{2,}|\r\n\r\n/)
+      .map((p) => p.replace(/\s+/g, ' ').trim())
+      .filter((p) => p.length > 0);
 
     for (const para of rawParagraphs) {
-      // Check if paragraph starts a new chapter
+      // Check for chapter boundary
       const match = para.match(chapterRegex);
-      if (match && currentBlocks.length > 3) {
-        // Save previous chapter
+      if (match && currentBlocks.length >= 2) {
         chapters.push({
           chapterNumber: currentChapterNumber,
           title: currentChapterTitle,
           contentBlocks: [...currentBlocks],
         });
-
         currentChapterNumber++;
         currentChapterTitle = match[0].trim() || `Chapter ${currentChapterNumber}`;
         currentBlocks = [];
@@ -97,7 +151,6 @@ export async function parsePdfFile(file: File): Promise<ExtractedBookData> {
     }
   }
 
-  // Push final chapter
   if (currentBlocks.length > 0) {
     chapters.push({
       chapterNumber: currentChapterNumber,
@@ -106,26 +159,40 @@ export async function parsePdfFile(file: File): Promise<ExtractedBookData> {
     });
   }
 
-  // Fallback if no readable blocks were extracted (e.g. scanned image PDF)
-  if (chapters.length === 0 || chapters[0].contentBlocks.length === 0) {
-    chapters.push({
-      chapterNumber: 1,
-      title: 'Chapter 1: Ingested Document',
-      contentBlocks: [
-        {
-          blockIndex: 1,
-          type: 'PARAGRAPH',
-          pageNumber: 1,
-          text: `Document "${cleanTitle}" was uploaded successfully. (Total scanned/detected pages: ${numPages}). The volume is ready for study and reflection.`,
-        },
-      ],
-    });
+  // If no chapter headings were found in a long document, segment into readable sections:
+  if (chapters.length === 1 && chapters[0].contentBlocks.length > 30) {
+    const allBlocks = chapters[0].contentBlocks;
+    const splitChapters: ExtractedChapterData[] = [];
+    const BLOCKS_PER_SECTION = 25;
+    let secIdx = 1;
+
+    for (let k = 0; k < allBlocks.length; k += BLOCKS_PER_SECTION) {
+      const chunk = allBlocks.slice(k, k + BLOCKS_PER_SECTION);
+      const startPage = chunk[0].pageNumber;
+      const endPage = chunk[chunk.length - 1].pageNumber;
+      splitChapters.push({
+        chapterNumber: secIdx,
+        title: `Section ${secIdx} (Pages ${startPage}–${endPage})`,
+        contentBlocks: chunk.map((b, bI) => ({ ...b, blockIndex: bI + 1 })),
+      });
+      secIdx++;
+    }
+
+    return {
+      title: cleanTitle,
+      totalPages: numPages,
+      chapters: splitChapters,
+      isScanned: false,
+      totalTextChars: totalExtractedChars,
+    };
   }
 
   return {
     title: cleanTitle,
     totalPages: numPages,
     chapters,
+    isScanned: false,
+    totalTextChars: totalExtractedChars,
   };
 }
 
@@ -157,5 +224,7 @@ export async function parseTextFile(file: File): Promise<ExtractedBookData> {
         contentBlocks: blocks,
       },
     ],
+    isScanned: false,
+    totalTextChars: text.length,
   };
 }

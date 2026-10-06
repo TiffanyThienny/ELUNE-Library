@@ -218,6 +218,29 @@ export const AudioPlayer: React.FC = () => {
     );
   }
 
+  const isScannedOrEmpty =
+    blocks.length === 0 ||
+    (blocks.length === 1 &&
+      blocks[0].text.includes('was uploaded successfully. (Total scanned/detected pages:'));
+
+  if (isScannedOrEmpty) {
+    return (
+      <div className="bg-white border border-[#E8DFD3] rounded-2xl p-4 shadow-sm space-y-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200 text-[#8C7355] flex items-center justify-center shadow-2xs">
+            <VolumeX className="w-4 h-4 text-[#8C7355]" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-[#2C2421]">Audio Unavailable</p>
+            <p className="text-[11px] text-[#8C7355]">
+              Readable digital text is required for audio narration.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Real-time AI Audio Narration (Text-To-Speech)
   return (
     <div className="bg-white border border-[#E8DFD3] rounded-2xl p-4 shadow-sm space-y-3">

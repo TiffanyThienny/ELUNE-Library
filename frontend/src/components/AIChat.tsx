@@ -52,6 +52,24 @@ export const AIChat: React.FC = () => {
     }
   };
 
+  const isScannedOrEmpty =
+    book?.isScanned ||
+    !book?.chapters?.length ||
+    (book?.chapters?.length === 1 &&
+      book?.chapters[0]?.contentBlocks?.[0]?.text?.includes('was uploaded successfully. (Total scanned/detected pages:'));
+
+  if (isScannedOrEmpty) {
+    return (
+      <div className="flex flex-col h-[480px] bg-white border border-[#E8DFD3] rounded-2xl shadow-xs p-6 items-center justify-center text-center space-y-3">
+        <MessageSquare className="w-8 h-8 text-[#8C7355] opacity-50 mb-1" />
+        <p className="text-xs font-bold text-[#2C2421]">Q&A Unavailable</p>
+        <p className="text-[11px] text-[#665A4F] max-w-[220px] leading-relaxed">
+          This book does not contain readable digital text. Q&A requires selectable text.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-[480px] bg-white border border-[#E8DFD3] rounded-2xl shadow-xs overflow-hidden">
       {/* Header */}

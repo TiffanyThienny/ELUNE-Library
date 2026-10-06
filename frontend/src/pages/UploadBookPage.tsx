@@ -91,12 +91,18 @@ export const UploadBookPage: React.FC = () => {
 
       // Extract PDF/Text chapters and paragraphs client-side so results appear immediately
       if (bookFile.name.toLowerCase().endsWith('.pdf')) {
-        setProcessingStatus('Extracting pages and chapters from PDF...');
+        setProcessingStatus('Starting document analysis...');
         try {
-          const parsed = await parsePdfFile(bookFile);
-          if (parsed && parsed.chapters.length > 0) {
-            formData.append('extractedChapters', JSON.stringify(parsed.chapters));
+          const parsed = await parsePdfFile(bookFile, (current, total) => {
+            setProcessingStatus(`Extracting text from PDF (page ${current} of ${total})...`);
+          });
+          if (parsed) {
             formData.append('totalPages', String(parsed.totalPages));
+            if (parsed.isScanned) {
+              formData.append('isScanned', 'true');
+            } else if (parsed.chapters && parsed.chapters.length > 0) {
+              formData.append('extractedChapters', JSON.stringify(parsed.chapters));
+            }
           }
         } catch (pdfErr) {
           console.warn('Client-side PDF parse error, continuing upload', pdfErr);

@@ -51,6 +51,25 @@ export const SummaryPanel: React.FC = () => {
     }
   };
 
+  const isScannedOrEmpty =
+    book?.isScanned ||
+    !currentChapter?.contentBlocks ||
+    currentChapter.contentBlocks.length === 0 ||
+    (currentChapter.contentBlocks.length === 1 &&
+      currentChapter.contentBlocks[0].text.includes('was uploaded successfully. (Total scanned/detected pages:'));
+
+  if (isScannedOrEmpty) {
+    return (
+      <div className="p-6 bg-[#FAF7F2] border border-[#E8DFD3] rounded-2xl text-center space-y-2">
+        <FileText className="w-6 h-6 text-[#8C7355] mx-auto opacity-70" />
+        <p className="text-xs font-bold text-[#2C2421]">AI Summary Unavailable</p>
+        <p className="text-[11px] text-[#665A4F] leading-relaxed">
+          This book does not contain readable digital text, so AI summarization is unavailable.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Action buttons */}
