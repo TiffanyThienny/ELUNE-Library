@@ -14,6 +14,10 @@ import {
   X,
   Home,
   Library as LibraryIcon,
+  Users,
+  Tag,
+  Clock,
+  LayoutDashboard,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -70,7 +74,10 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           {/* Logo */}
-          <Link to={isAuthenticated ? '/home' : '/'} className="flex items-center space-x-3 group">
+          <Link
+            to={isAdmin ? '/admin' : isAuthenticated ? '/home' : '/'}
+            className="flex items-center space-x-3 group"
+          >
             <div className="w-10 h-10 rounded-xl bg-[#2C2421] text-[#FAF7F2] flex items-center justify-center font-serif-literata font-bold text-xl shadow-sm transition-transform group-hover:scale-105">
               É
             </div>
@@ -79,73 +86,74 @@ export const Navbar: React.FC = () => {
                 ELUNÈ
               </span>
               <span className="inline-block sm:ml-2 text-[10px] sm:text-xs uppercase tracking-widest text-[#8C7355] font-semibold">
-                LIBRARY
+                {isAdmin ? 'ADMIN CONSOLE' : 'LIBRARY'}
               </span>
             </div>
           </Link>
 
           {/* Desktop Nav Links */}
           <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
-            <Link
-              to="/explore"
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                isActive('/explore')
-                  ? 'bg-[#EBDDC8] text-[#2C2421]'
-                  : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
-              }`}
-            >
-              <Compass className="w-4 h-4" />
-              Explore
-            </Link>
-
-            {isAuthenticated && (
+            {isAdmin ? (
+              // ADMIN EXCLUSIVE NAVIGATION (No user links)
               <>
                 <Link
-                  to="/home"
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    isActive('/home')
-                      ? 'bg-[#EBDDC8] text-[#2C2421]'
+                  to="/admin"
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    location.pathname === '/admin'
+                      ? 'bg-[#2C2421] text-[#FAF7F2]'
                       : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
                   }`}
                 >
-                  <Home className="w-4 h-4" />
-                  Home
+                  <Shield className="w-4 h-4 text-[#8C7355]" />
+                  Console
                 </Link>
 
                 <Link
-                  to="/library"
+                  to="/admin/books"
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    isActive('/library')
+                    isActive('/admin/books')
                       ? 'bg-[#EBDDC8] text-[#2C2421]'
                       : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
                   }`}
                 >
-                  <LibraryIcon className="w-4 h-4" />
-                  My Library
+                  <BookOpen className="w-4 h-4" />
+                  All Books
                 </Link>
 
                 <Link
-                  to="/bookmarks"
+                  to="/admin/books/pending"
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    isActive('/bookmarks')
+                    isActive('/admin/books/pending')
                       ? 'bg-[#EBDDC8] text-[#2C2421]'
                       : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
                   }`}
                 >
-                  <Bookmark className="w-4 h-4" />
-                  Bookmarks
+                  <Clock className="w-4 h-4" />
+                  Pending
                 </Link>
 
                 <Link
-                  to="/notes"
+                  to="/admin/categories"
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    isActive('/notes')
+                    isActive('/admin/categories')
                       ? 'bg-[#EBDDC8] text-[#2C2421]'
                       : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
                   }`}
                 >
-                  <FileText className="w-4 h-4" />
-                  Notes
+                  <Tag className="w-4 h-4" />
+                  Categories
+                </Link>
+
+                <Link
+                  to="/admin/users"
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    isActive('/admin/users')
+                      ? 'bg-[#EBDDC8] text-[#2C2421]'
+                      : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Users
                 </Link>
 
                 <Link
@@ -159,21 +167,98 @@ export const Navbar: React.FC = () => {
                   <UploadCloud className="w-4 h-4" />
                   Upload
                 </Link>
-              </>
-            )}
 
-            {isAdmin && (
-              <Link
-                to="/admin"
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  location.pathname.startsWith('/admin')
-                    ? 'bg-[#2C2421] text-[#FAF7F2]'
-                    : 'text-[#8C7355] hover:bg-[#EBDDC8] hover:text-[#2C2421]'
-                }`}
-              >
-                <Shield className="w-4 h-4" />
-                Admin
-              </Link>
+                <Link
+                  to="/explore"
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    isActive('/explore')
+                      ? 'bg-[#EBDDC8] text-[#2C2421]'
+                      : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                  }`}
+                >
+                  <Compass className="w-4 h-4" />
+                  Explore
+                </Link>
+              </>
+            ) : (
+              // REGULAR USER NAVIGATION
+              <>
+                <Link
+                  to="/explore"
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    isActive('/explore')
+                      ? 'bg-[#EBDDC8] text-[#2C2421]'
+                      : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                  }`}
+                >
+                  <Compass className="w-4 h-4" />
+                  Explore
+                </Link>
+
+                {isAuthenticated && (
+                  <>
+                    <Link
+                      to="/home"
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                        isActive('/home')
+                          ? 'bg-[#EBDDC8] text-[#2C2421]'
+                          : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                      }`}
+                    >
+                      <Home className="w-4 h-4" />
+                      Home
+                    </Link>
+
+                    <Link
+                      to="/library"
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                        isActive('/library')
+                          ? 'bg-[#EBDDC8] text-[#2C2421]'
+                          : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                      }`}
+                    >
+                      <LibraryIcon className="w-4 h-4" />
+                      My Library
+                    </Link>
+
+                    <Link
+                      to="/bookmarks"
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                        isActive('/bookmarks')
+                          ? 'bg-[#EBDDC8] text-[#2C2421]'
+                          : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                      }`}
+                    >
+                      <Bookmark className="w-4 h-4" />
+                      Bookmarks
+                    </Link>
+
+                    <Link
+                      to="/notes"
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                        isActive('/notes')
+                          ? 'bg-[#EBDDC8] text-[#2C2421]'
+                          : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      Notes
+                    </Link>
+
+                    <Link
+                      to="/upload"
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                        isActive('/upload')
+                          ? 'bg-[#EBDDC8] text-[#2C2421]'
+                          : 'text-[#665A4F] hover:text-[#2C2421] hover:bg-[#F2ECE1]'
+                      }`}
+                    >
+                      <UploadCloud className="w-4 h-4" />
+                      Upload
+                    </Link>
+                  </>
+                )}
+              </>
             )}
           </div>
 
@@ -271,16 +356,96 @@ export const Navbar: React.FC = () => {
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-[#E8DFD3] bg-[#FAF7F2] px-4 pt-3 pb-6 space-y-2">
-          <Link
-            to="/explore"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-lg text-base font-medium text-[#2C2421] hover:bg-[#EBDDC8]"
-          >
-            Explore
-          </Link>
-
-          {isAuthenticated ? (
+          {isAdmin ? (
             <>
+              <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-widest text-[#8C7355]">
+                Admin Console
+              </div>
+              <Link
+                to="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3 py-2 rounded-lg text-base font-semibold ${
+                  location.pathname === '/admin' ? 'bg-[#2C2421] text-white' : 'text-[#2C2421] hover:bg-[#EBDDC8]'
+                }`}
+              >
+                Console Dashboard
+              </Link>
+              <Link
+                to="/admin/books"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3 py-2 rounded-lg text-base font-medium ${
+                  isActive('/admin/books') ? 'bg-[#EBDDC8] text-[#2C2421]' : 'text-[#2C2421] hover:bg-[#EBDDC8]'
+                }`}
+              >
+                All Books
+              </Link>
+              <Link
+                to="/admin/books/pending"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3 py-2 rounded-lg text-base font-medium ${
+                  isActive('/admin/books/pending') ? 'bg-[#EBDDC8] text-[#2C2421]' : 'text-[#2C2421] hover:bg-[#EBDDC8]'
+                }`}
+              >
+                Pending Reviews
+              </Link>
+              <Link
+                to="/admin/categories"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3 py-2 rounded-lg text-base font-medium ${
+                  isActive('/admin/categories') ? 'bg-[#EBDDC8] text-[#2C2421]' : 'text-[#2C2421] hover:bg-[#EBDDC8]'
+                }`}
+              >
+                Categories
+              </Link>
+              <Link
+                to="/admin/users"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3 py-2 rounded-lg text-base font-medium ${
+                  isActive('/admin/users') ? 'bg-[#EBDDC8] text-[#2C2421]' : 'text-[#2C2421] hover:bg-[#EBDDC8]'
+                }`}
+              >
+                Users
+              </Link>
+              <Link
+                to="/upload"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-[#2C2421] hover:bg-[#EBDDC8]"
+              >
+                Upload Volume
+              </Link>
+              <Link
+                to="/explore"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-[#2C2421] hover:bg-[#EBDDC8]"
+              >
+                Explore
+              </Link>
+              <Link
+                to="/profile"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-[#2C2421] hover:bg-[#EBDDC8]"
+              >
+                Profile ({user?.name})
+              </Link>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50"
+              >
+                Sign Out
+              </button>
+            </>
+          ) : isAuthenticated ? (
+            <>
+              <Link
+                to="/explore"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-[#2C2421] hover:bg-[#EBDDC8]"
+              >
+                Explore
+              </Link>
               <Link
                 to="/home"
                 onClick={() => setMobileMenuOpen(false)}
@@ -323,17 +488,6 @@ export const Navbar: React.FC = () => {
               >
                 Profile ({user?.name})
               </Link>
-
-              {isAdmin && (
-                <Link
-                  to="/admin"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-3 py-2 rounded-lg text-base font-semibold text-amber-900 bg-amber-100"
-                >
-                  Admin Dashboard
-                </Link>
-              )}
-
               <button
                 onClick={() => {
                   setMobileMenuOpen(false);

@@ -54,7 +54,7 @@ export const AdminSidebar: React.FC = () => {
 
       <div className="pt-4 border-t border-[#F2ECE1]">
         <Link
-          to="/home"
+          to="/explore"
           className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-[#8C7355] hover:bg-[#FAF7F2] hover:text-[#2C2421] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
