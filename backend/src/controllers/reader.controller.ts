@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
-import { Visibility, BookStatus } from '@prisma/client';
+import { canUserAccessBook } from '../utils/permission.util';
 
 export const getReaderData = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -38,26 +38,10 @@ export const getReaderData = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check private book access
-    if (book.visibility === Visibility.PRIVATE) {
-      const isOwner = userId && userId === book.uploadedBy;
-      const isAdmin = req.user && req.user.role === 'ADMIN';
-
-      if (!isOwner && !isAdmin) {
-        sendError(res, 'Access denied. This is a private book.', 'FORBIDDEN', 403);
-        return;
-      }
-    }
-
-    // Check non-approved book access
-    if (book.status !== BookStatus.APPROVED) {
-      const isOwner = userId && userId === book.uploadedBy;
-      const isAdmin = req.user && req.user.role === 'ADMIN';
-
-      if (!isOwner && !isAdmin) {
-        sendError(res, 'This book is not approved for reading.', 'FORBIDDEN', 403);
-        return;
-      }
+    // STRICT MASTER READER ACCESS CONTROL
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied. You do not have permission to read this volume.', 'FORBIDDEN', 403);
+      return;
     }
 
     // Fetch user bookmarks & notes & reading progress if authenticated

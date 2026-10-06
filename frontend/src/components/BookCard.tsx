@@ -42,43 +42,41 @@ export const BookCard: React.FC<BookCardProps> = ({
           fallbackCover
         )}
 
-        {/* Visibility / Status Badges */}
-        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
-          {book.visibility === 'PRIVATE' ? (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-stone-900/80 text-white backdrop-blur-xs shadow-xs">
-              <Lock className="w-2.5 h-2.5" />
-              Private
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-amber-900/80 text-white backdrop-blur-xs shadow-xs">
-              <Globe className="w-2.5 h-2.5" />
-              Public
-            </span>
-          )}
+        {/* Visibility / Status Badges — Only shown in Personal Library / Uploads contexts */}
+        {showStatus && (
+          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
+            {book.visibility === 'PRIVATE' ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-stone-900/85 text-white backdrop-blur-xs shadow-xs">
+                <Lock className="w-2.5 h-2.5" />
+                Private
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-amber-900/85 text-white backdrop-blur-xs shadow-xs">
+                <Globe className="w-2.5 h-2.5" />
+                Public
+              </span>
+            )}
 
-          {showStatus && (
-            <>
-              {book.status === 'PENDING' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-amber-500 text-white shadow-xs">
-                  <Clock className="w-2.5 h-2.5" />
-                  Pending Review
-                </span>
-              )}
-              {book.status === 'APPROVED' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-emerald-600 text-white shadow-xs">
-                  <CheckCircle2 className="w-2.5 h-2.5" />
-                  Approved
-                </span>
-              )}
-              {book.status === 'REJECTED' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-red-600 text-white shadow-xs">
-                  <AlertCircle className="w-2.5 h-2.5" />
-                  Rejected
-                </span>
-              )}
-            </>
-          )}
-        </div>
+            {book.status === 'PENDING' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-amber-500 text-white shadow-xs">
+                <Clock className="w-2.5 h-2.5" />
+                Waiting for admin approval
+              </span>
+            )}
+            {book.status === 'APPROVED' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-emerald-600 text-white shadow-xs">
+                <CheckCircle2 className="w-2.5 h-2.5" />
+                Published
+              </span>
+            )}
+            {book.status === 'REJECTED' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-red-600 text-white shadow-xs">
+                <AlertCircle className="w-2.5 h-2.5" />
+                Rejected
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Progress bar overlay at bottom of cover if in-progress */}
         {progressPercentage !== undefined && progressPercentage > 0 && (

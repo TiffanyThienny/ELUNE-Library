@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getBooks,
   getBookById,
+  getBookFile,
   uploadBook,
   getMyUploads,
   deleteBook
@@ -12,8 +13,10 @@ import { uploadBookFile } from '../middleware/upload.middleware';
 const router = Router();
 
 router.get('/', optionalAuth, getBooks);
+router.get('/public', optionalAuth, getBooks);
 router.get('/my-uploads', authenticateJwt, getMyUploads);
 router.get('/:id', optionalAuth, getBookById);
+router.get('/:id/file', optionalAuth, getBookFile);
 router.post('/upload', authenticateJwt, uploadBookFile.single('file'), uploadBook);
 router.delete('/:id', authenticateJwt, deleteBook);
 

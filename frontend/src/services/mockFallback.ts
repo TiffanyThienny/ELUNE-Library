@@ -684,6 +684,27 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
+  // Helper: Master Book Access Control for Mock/Offline Mode
+  const canAccessMockBook = (targetBook: Book, currentUser: any): boolean => {
+    // 1. PUBLIC + APPROVED is accessible to everyone
+    if (targetBook.visibility === 'PUBLIC' && targetBook.status === 'APPROVED') {
+      return true;
+    }
+    // Any other status requires authenticated user
+    if (!currentUser || !currentUser.id) {
+      return false;
+    }
+    // Admin has access
+    if (currentUser.role === 'ADMIN') {
+      return true;
+    }
+    // Owner has access (whether PRIVATE, PENDING, or REJECTED)
+    if (targetBook.uploadedBy && (targetBook.uploadedBy === currentUser.id || targetBook.uploadedBy === currentUser.email)) {
+      return true;
+    }
+    return false;
+  };
+
   // 8. Book Detail by ID
   const bookMatch = path.match(/^\/api\/books\/([^\/]+)$/);
   if (bookMatch && method === 'GET') {
@@ -693,6 +714,12 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     if (!book) {
       throw new Error(`Book not found with ID ${id}`);
     }
+
+    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    if (!canAccessMockBook(book, currentUser)) {
+      throw new Error('Access denied. You do not have permission to view this volume.');
+    }
+
     return {
       success: true,
       data: { book },
@@ -708,6 +735,11 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === id);
     if (!book) {
       throw new Error('Book not found');
+    }
+
+    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    if (!canAccessMockBook(book, currentUser)) {
+      throw new Error('Access denied. You do not have permission to read this volume.');
     }
 
     const savedBookmarks = JSON.parse(localStorage.getItem('elune_bookmarks') || '[]');
@@ -735,10 +767,15 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
 
   // 10. Personal Library
   if (path === '/api/library' && method === 'GET') {
+    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
     const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
     const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
     const allAvailable = [...FALLBACK_BOOKS, ...userUploads];
-    const libraryBooks = allAvailable.filter((b) => savedLibraryIds.includes(b.id));
+    
+    // User can see saved books that are PUBLIC+APPROVED or owned by them
+    const libraryBooks = allAvailable.filter(
+      (b) => savedLibraryIds.includes(b.id) && canAccessMockBook(b, currentUser)
+    );
     return {
       success: true,
       data: { library: libraryBooks },
@@ -748,6 +785,14 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
 
   if (path.startsWith('/api/library/') && method === 'POST') {
     const bookId = path.replace('/api/library/', '');
+    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const targetBook = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bookId);
+
+    if (!targetBook || !canAccessMockBook(targetBook, currentUser)) {
+      throw new Error('Access denied. You cannot save a private or unapproved volume.');
+    }
+
     const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
     if (!savedLibraryIds.includes(bookId)) {
       savedLibraryIds.push(bookId);
@@ -1094,6 +1139,87 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       message: isApprove
         ? 'Book approved and published to public explore catalog'
         : 'Book submission rejected'
+    } as T;
+  }
+
+  // Admin Approve (PUT /api/admin/books/:id/approve)
+  const approveMatch = path.match(/^\/api\/admin\/books\/([^\/]+)\/approve$/);
+  if (approveMatch && method === 'PUT') {
+    const bookId = approveMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    let target = userUploads.find((b) => b.id === bookId);
+
+    if (!target) {
+      target = {
+        id: bookId,
+        title: 'Deep Work and Peaceful Focus',
+        author: 'Kaelen Mori',
+        description: 'Approved public volume.',
+        categoryId: 'cat-self-dev',
+        category: FALLBACK_CATEGORIES[2],
+        totalPages: 110,
+        language: 'English',
+        fileType: 'CANONICAL',
+        visibility: 'PUBLIC',
+        status: 'APPROVED',
+        uploadedBy: 'usr_standard',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      userUploads.unshift(target);
+    } else {
+      target.status = 'APPROVED';
+      target.visibility = 'PUBLIC';
+      target.rejectionReason = undefined;
+    }
+
+    localStorage.setItem('elune_user_uploads', JSON.stringify(userUploads));
+    return {
+      success: true,
+      data: { book: target },
+      message: 'Book approved and published to public explore catalog'
+    } as T;
+  }
+
+  // Admin Reject (PUT /api/admin/books/:id/reject)
+  const rejectMatch = path.match(/^\/api\/admin\/books\/([^\/]+)\/reject$/);
+  if (rejectMatch && method === 'PUT') {
+    const bookId = rejectMatch[1];
+    const body = options.body ? JSON.parse(options.body as string) : {};
+    const rejectionReason = body.reason || body.notes || 'Did not meet catalog standards.';
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    let target = userUploads.find((b) => b.id === bookId);
+
+    if (!target) {
+      target = {
+        id: bookId,
+        title: 'Deep Work and Peaceful Focus',
+        author: 'Kaelen Mori',
+        description: 'Rejected volume.',
+        categoryId: 'cat-self-dev',
+        category: FALLBACK_CATEGORIES[2],
+        totalPages: 110,
+        language: 'English',
+        fileType: 'CANONICAL',
+        visibility: 'PUBLIC',
+        status: 'REJECTED',
+        rejectionReason,
+        uploadedBy: 'usr_standard',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      userUploads.unshift(target);
+    } else {
+      target.status = 'REJECTED';
+      target.visibility = 'PUBLIC';
+      target.rejectionReason = rejectionReason;
+    }
+
+    localStorage.setItem('elune_user_uploads', JSON.stringify(userUploads));
+    return {
+      success: true,
+      data: { book: target },
+      message: 'Book submission rejected'
     } as T;
   }
 

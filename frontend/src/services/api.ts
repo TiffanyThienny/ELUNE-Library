@@ -249,6 +249,12 @@ export const adminService = {
   getPendingBooks: () =>
     api.get<{ success: boolean; data: { pendingBooks: any[] } }>('/api/admin/books/pending'),
 
+  approveBook: (bookId: string, notes?: string) =>
+    api.put<{ success: boolean; data: { book: any }; message: string }>(`/api/admin/books/${bookId}/approve`, { notes }),
+
+  rejectBook: (bookId: string, reason: string) =>
+    api.put<{ success: boolean; data: { book: any }; message: string }>(`/api/admin/books/${bookId}/reject`, { reason }),
+
   reviewBook: (bookId: string, data: { action: 'APPROVE' | 'REJECT'; rejectionReason?: string }) =>
     api.post<{ success: boolean; data: { book: any }; message: string }>(`/api/admin/books/${bookId}/review`, data),
 

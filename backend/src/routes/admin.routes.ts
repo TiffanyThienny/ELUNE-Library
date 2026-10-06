@@ -2,6 +2,8 @@ import { Router } from 'express';
 import {
   getStatistics,
   getPendingBooks,
+  approveBook,
+  rejectBook,
   reviewBook,
   toggleBookVisibility,
   getAllBooks,
@@ -19,6 +21,8 @@ router.use(authorizeRole([Role.ADMIN]));
 
 router.get('/statistics', getStatistics);
 router.get('/books/pending', getPendingBooks);
+router.put('/books/:id/approve', approveBook);
+router.put('/books/:id/reject', rejectBook);
 router.post('/books/:id/review', reviewBook);
 router.post('/books/:id/toggle-visibility', toggleBookVisibility);
 router.get('/books', getAllBooks);

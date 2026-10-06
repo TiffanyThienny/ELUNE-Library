@@ -59,10 +59,13 @@ export const getStatistics = async (_req: Request, res: Response): Promise<void>
 export const getPendingBooks = async (_req: Request, res: Response): Promise<void> => {
   try {
     const pending = await prisma.book.findMany({
-      where: { status: BookStatus.PENDING },
+      where: {
+        status: BookStatus.PENDING,
+        visibility: Visibility.PUBLIC
+      },
       include: {
         category: true,
-        uploader: { select: { id: true, name: true, email: true } },
+        uploader: { select: { id: true, name: true, email: true, role: true } },
         _count: { select: { chapters: true } }
       },
       orderBy: { createdAt: 'desc' }
@@ -75,10 +78,86 @@ export const getPendingBooks = async (_req: Request, res: Response): Promise<voi
   }
 };
 
+export const approveBook = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const reviewerId = req.user?.id;
+
+    const existing = await prisma.book.findUnique({ where: { id } });
+    if (!existing) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    const [updatedBook, reviewRecord] = await prisma.$transaction([
+      prisma.book.update({
+        where: { id },
+        data: {
+          status: BookStatus.APPROVED,
+          visibility: Visibility.PUBLIC,
+          rejectionReason: null
+        }
+      }),
+      prisma.bookUploadReview.create({
+        data: {
+          bookId: id,
+          reviewerId: reviewerId || 'system',
+          action: ReviewAction.APPROVED,
+          notes: req.body.notes || 'Approved by administrator'
+        }
+      })
+    ]);
+
+    sendSuccess(res, { book: updatedBook, review: reviewRecord }, 'Book approved and published to Explore');
+  } catch (error: any) {
+    console.error('approveBook error:', error);
+    sendError(res, 'Failed to approve book', error.message, 500);
+  }
+};
+
+export const rejectBook = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const reviewerId = req.user?.id;
+    const { reason, notes } = req.body;
+    const rejectionReason = reason || notes || 'Submission does not meet catalog guidelines.';
+
+    const existing = await prisma.book.findUnique({ where: { id } });
+    if (!existing) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    const [updatedBook, reviewRecord] = await prisma.$transaction([
+      prisma.book.update({
+        where: { id },
+        data: {
+          status: BookStatus.REJECTED,
+          visibility: Visibility.PUBLIC,
+          rejectionReason
+        }
+      }),
+      prisma.bookUploadReview.create({
+        data: {
+          bookId: id,
+          reviewerId: reviewerId || 'system',
+          action: ReviewAction.REJECTED,
+          notes: rejectionReason
+        }
+      })
+    ]);
+
+    sendSuccess(res, { book: updatedBook, review: reviewRecord }, 'Book has been rejected with feedback');
+  } catch (error: any) {
+    console.error('rejectBook error:', error);
+    sendError(res, 'Failed to reject book', error.message, 500);
+  }
+};
+
 export const reviewBook = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { action, notes } = req.body;
+    const { action, notes, reason } = req.body;
     const reviewerId = req.user?.id;
 
     if (!reviewerId) {
@@ -101,13 +180,15 @@ export const reviewBook = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    const rejectionReason = isApproved ? null : (reason || notes || 'Submission does not meet catalog guidelines.');
+
     const [updatedBook, reviewRecord] = await prisma.$transaction([
       prisma.book.update({
         where: { id },
         data: {
           status: isApproved ? BookStatus.APPROVED : BookStatus.REJECTED,
           visibility: isApproved ? Visibility.PUBLIC : existing.visibility,
-          rejectionReason: isApproved ? null : (notes || 'Submission does not meet catalog guidelines.')
+          rejectionReason
         }
       }),
       prisma.bookUploadReview.create({
@@ -115,7 +196,7 @@ export const reviewBook = async (req: Request, res: Response): Promise<void> => 
           bookId: id,
           reviewerId,
           action: isApproved ? ReviewAction.APPROVED : ReviewAction.REJECTED,
-          notes: notes || null
+          notes: rejectionReason || (isApproved ? 'Approved by admin' : null)
         }
       })
     ]);

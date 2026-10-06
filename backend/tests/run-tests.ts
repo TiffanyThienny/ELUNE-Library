@@ -185,6 +185,73 @@ async function main() {
     assert(json.data.book.visibility === 'PUBLIC', 'Book should now be PUBLIC');
   });
 
+  // Test Admin Reject with reason
+  const testRejectId = 'test-rejected-volume';
+  await prisma.book.upsert({
+    where: { id: testRejectId },
+    update: { status: 'PENDING', visibility: 'PUBLIC' },
+    create: {
+      id: testRejectId,
+      title: 'Sample Rejected Manuscript',
+      author: 'Author Demo',
+      description: 'Manuscript awaiting review',
+      status: 'PENDING',
+      visibility: 'PUBLIC',
+      uploadedBy: (await prisma.user.findUnique({ where: { email: 'demo@elune.read' } }))?.id
+    }
+  });
+
+  await runTest('PUT /api/admin/books/:id/reject should record rejectionReason and set REJECTED', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/books/${testRejectId}/reject`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ reason: 'Formatting does not meet library guidelines.' })
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.book.status === 'REJECTED', 'Book status must be REJECTED');
+    assert(json.data.book.rejectionReason === 'Formatting does not meet library guidelines.', 'Rejection reason must match');
+  });
+
+  await runTest('GET /api/books/:id for REJECTED book by other user should return 403 Forbidden', async () => {
+    const res = await fetch(`${baseUrl}/api/books/${testRejectId}`, {
+      headers: { Authorization: `Bearer ${user2Token}` }
+    });
+    assert(res.status === 403, `Expected 403 for unauthorized user accessing rejected book, got ${res.status}`);
+  });
+
+  await runTest('GET /api/books/:id for REJECTED book by Uploader should return 200 with rejectionReason', async () => {
+    const res = await fetch(`${baseUrl}/api/books/${testRejectId}`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200 for owner accessing rejected book, got ${res.status}`);
+    assert(Boolean(json.data.rejectionReason), 'Uploader must see rejection reason');
+  });
+
+  await runTest('PUT /api/admin/books/:id/approve should publish volume to public Explore', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/books/${testRejectId}/approve`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ notes: 'Revision approved' })
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200 on approval, got ${res.status}`);
+    assert(json.data.book.status === 'APPROVED', 'Status must be APPROVED');
+    assert(json.data.book.visibility === 'PUBLIC', 'Visibility must be PUBLIC');
+
+    // Confirm presence in Explore catalog
+    const exploreRes = await fetch(`${baseUrl}/api/books`);
+    const exploreJson = await exploreRes.json();
+    assert(exploreJson.data.books.some((b: any) => b.id === testRejectId), 'Newly approved book must appear in public Explore');
+  });
+
   // 10. Reader - Full session with ContentBlocks & Audio
   await runTest('GET /api/reader/:bookId should return canonical content blocks and audio sync', async () => {
     const res = await fetch(`${baseUrl}/api/reader/${testBookId}`, {

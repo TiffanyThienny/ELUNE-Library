@@ -1,9 +1,13 @@
+import fs from 'fs';
+import path from 'path';
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
+import { ENV } from '../config/env';
 import { storageService } from '../services/storage.service';
 import { documentService } from '../services/document.service';
 import { sendSuccess, sendError } from '../utils/response.util';
 import { Visibility, BookStatus, BlockType } from '@prisma/client';
+import { canUserAccessBook, resolveBookUploadStatus } from '../utils/permission.util';
 
 export const formatBookForResponse = (book: any, progress?: any) => {
   let parsedSummary = {
@@ -209,32 +213,65 @@ export const getBookById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // CHECK PRIVATE BOOK ACCESS
-    if (book.visibility === Visibility.PRIVATE) {
-      const isOwner = req.user && req.user.id === book.uploadedBy;
-      const isAdmin = req.user && req.user.role === 'ADMIN';
-
-      if (!isOwner && !isAdmin) {
-        sendError(res, 'Access denied. This is a private book accessible only to its owner.', 'FORBIDDEN', 403);
-        return;
-      }
-    }
-
-    // CHECK NON-APPROVED STATUS ACCESS
-    if (book.status !== BookStatus.APPROVED) {
-      const isOwner = req.user && req.user.id === book.uploadedBy;
-      const isAdmin = req.user && req.user.role === 'ADMIN';
-
-      if (!isOwner && !isAdmin) {
-        sendError(res, 'This book is not publicly available.', 'FORBIDDEN', 403);
-        return;
-      }
+    // STRICT MASTER ACCESS CONTROL
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(
+        res,
+        'Access denied. You do not have permission to access this volume.',
+        'FORBIDDEN',
+        403
+      );
+      return;
     }
 
     sendSuccess(res, formatBookForResponse(book), 'Book details retrieved');
   } catch (error: any) {
     console.error('getBookById error:', error);
     sendError(res, 'Failed to fetch book details', error.message, 500);
+  }
+};
+
+/**
+ * Protected Book File Download / Stream (Strict Permission Check)
+ */
+export const getBookFile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const book = await prisma.book.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        fileUrl: true,
+        visibility: true,
+        status: true,
+        uploadedBy: true
+      }
+    });
+
+    if (!book || !book.fileUrl) {
+      sendError(res, `File not found for book ID ${id}`, 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied. You do not have permission to access this file.', 'FORBIDDEN', 403);
+      return;
+    }
+
+    // Resolve file from upload directory
+    const filename = path.basename(book.fileUrl);
+    const filePath = path.join(ENV.UPLOAD_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+      sendError(res, 'Physical file not found on storage server', 'NOT_FOUND', 404);
+      return;
+    }
+
+    res.sendFile(path.resolve(filePath));
+  } catch (error: any) {
+    console.error('getBookFile error:', error);
+    sendError(res, 'Failed to serve book file', error.message, 500);
   }
 };
 
@@ -316,13 +353,10 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
     // Otherwise:
     // If PRIVATE -> status = APPROVED (owner only)
     // If PUBLIC -> status = PENDING (requires admin review)
-    const isAdmin = req.user.role === 'ADMIN';
-    const visibility = isAdmin
-      ? Visibility.PUBLIC
-      : (requestedVisibility === 'PUBLIC' ? Visibility.PUBLIC : Visibility.PRIVATE);
-    const status = isAdmin
-      ? BookStatus.APPROVED
-      : (visibility === 'PUBLIC' ? BookStatus.PENDING : BookStatus.APPROVED);
+    // STRICT MASTER RESOLUTION
+    // Admin upload: ALWAYS PUBLIC, ALWAYS APPROVED (ignoring any requested visibility)
+    // User upload: PUBLIC -> PENDING, PRIVATE -> APPROVED (immediate owner access)
+    const { visibility, status } = resolveBookUploadStatus(req.user, requestedVisibility);
 
     const book = await prisma.book.create({
       data: {
@@ -339,6 +373,7 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         uploadedBy: req.user.id,
         visibility,
         status,
+        rejectionReason: null,
         chapters: {
           create: extracted.chapters.map((ch) => {
             const paragraphs = ch.content

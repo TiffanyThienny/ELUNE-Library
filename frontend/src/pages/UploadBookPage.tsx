@@ -255,50 +255,14 @@ export const UploadBookPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Visibility Selection — Core Rule */}
-        <div className="pt-4 border-t border-[#F2ECE1] space-y-3">
-          <label className="block text-xs font-bold uppercase tracking-wider text-[#8C7355]">
-            Visibility & Publication Flow
-          </label>
+        {/* Visibility Selection — Core Rule: Only shown for regular users */}
+        {!isAdmin && (
+          <div className="pt-4 border-t border-[#F2ECE1] space-y-3">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[#8C7355]">
+              Who can see this book?
+            </label>
 
-          {isAdmin ? (
-            <div className="p-4 rounded-2xl border border-emerald-300 bg-emerald-50/70 text-[#2C2421]">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 mb-1">
-                <Shield className="w-4 h-4 text-emerald-700" />
-                Admin Publication: Instant Approval & Public Catalog
-              </div>
-              <p className="text-xs text-emerald-900 leading-relaxed">
-                As an <strong>Administrator</strong>, your uploaded volumes are <strong>automatically approved</strong> and published directly into the <strong>Public Explore Books</strong> catalog with full AI reading features enabled.
-              </p>
-            </div>
-          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Private option */}
-              <label
-                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                  visibility === 'PRIVATE'
-                    ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
-                    : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="visibility"
-                  value="PRIVATE"
-                  checked={visibility === 'PRIVATE'}
-                  onChange={() => setVisibility('PRIVATE')}
-                  className="mt-1 accent-[#8C7355]"
-                />
-                <div>
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
-                    <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private
-                  </span>
-                  <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                    Only you can read, bookmark, and consult AI. Does not require admin approval.
-                  </span>
-                </div>
-              </label>
-
               {/* Public option */}
               <label
                 className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
@@ -320,13 +284,39 @@ export const UploadBookPage: React.FC = () => {
                     <Globe className="w-3.5 h-3.5 text-[#8C7355]" /> Public
                   </span>
                   <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                    Submitted for editorial admin review before gracing the public explore library.
+                    Anyone can read this book after admin approval.
+                  </span>
+                </div>
+              </label>
+
+              {/* Private option */}
+              <label
+                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                  visibility === 'PRIVATE'
+                    ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
+                    : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="PRIVATE"
+                  checked={visibility === 'PRIVATE'}
+                  onChange={() => setVisibility('PRIVATE')}
+                  className="mt-1 accent-[#8C7355]"
+                />
+                <div>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
+                    <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private
+                  </span>
+                  <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
+                    Only you can access this book.
                   </span>
                 </div>
               </label>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Submit CTA */}
         <div className="pt-4 flex justify-end">

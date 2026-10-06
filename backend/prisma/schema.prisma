@@ -114,6 +114,7 @@ model Book {
   @@index([uploadedBy])
   @@index([visibility])
   @@index([status])
+  @@index([visibility, status])
   @@map("books")
 }
 

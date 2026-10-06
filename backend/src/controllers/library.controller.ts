@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { formatBookForResponse } from './book.controller';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { canUserAccessBook } from '../utils/permission.util';
 
 export const getLibrary = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -34,7 +35,10 @@ export const getLibrary = async (req: Request, res: Response): Promise<void> => 
       orderBy: { addedAt: 'desc' }
     });
 
-    const libraryItems = userBooks.map((ub) => ({
+    // STRICT FILTER: User can only see PUBLIC+APPROVED or their own uploads
+    const authorizedItems = userBooks.filter((ub) => ub.book && canUserAccessBook(ub.book, req.user));
+
+    const libraryItems = authorizedItems.map((ub) => ({
       ...formatBookForResponse(ub.book, ub.book.readingProgress[0]),
       isFavorite: ub.isFavorite,
       addedAt: ub.addedAt
@@ -60,6 +64,11 @@ export const addToLibrary = async (req: Request, res: Response): Promise<void> =
     const book = await prisma.book.findUnique({ where: { id: bookId } });
     if (!book) {
       sendError(res, `Book not found with ID ${bookId}`, 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied. You cannot add a private or unapproved volume to your library.', 'FORBIDDEN', 403);
       return;
     }
 
