@@ -332,32 +332,46 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const { fileUrl } = await storageService.uploadFile(file);
-    const ext = file.originalname.split('.').pop()?.toUpperCase() || 'EPUB';
+    // Validate file extension
+    const ext = file.originalname.split('.').pop()?.toUpperCase() || '';
+    if (!['PDF', 'EPUB', 'TXT', 'MD'].includes(ext)) {
+      sendError(res, 'Unsupported file type. Please upload a valid PDF, EPUB, or TXT document.', 'UNSUPPORTED_TYPE', 400);
+      return;
+    }
+
+    // Validate file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      sendError(res, 'File size exceeds maximum allowable limit of 50MB.', 'FILE_TOO_LARGE', 400);
+      return;
+    }
 
     let extracted;
-    if (ext === 'PDF') {
-      extracted = await documentService.parsePdf(file.path, file.originalname);
-    } else {
-      extracted = await documentService.parseEpub(file.path, file.originalname);
+    try {
+      if (ext === 'PDF') {
+        extracted = await documentService.parsePdf(file.path, file.originalname);
+      } else if (ext === 'TXT' || ext === 'MD') {
+        extracted = await documentService.parsePlainText(file.path, file.originalname);
+      } else {
+        extracted = await documentService.parseEpub(file.path, file.originalname);
+      }
+    } catch (parseError: any) {
+      console.error('Document parsing failed:', parseError);
+      sendError(res, 'Unable to read this PDF file.', 'INVALID_PDF', 400);
+      return;
     }
+
+    const { fileUrl } = await storageService.uploadFile(file);
 
     const title = req.body.title || extracted.title;
     const author = req.body.author || req.user.name;
-    const description = req.body.description || `Uploaded book "${title}" prepared for comfortable reading and AI learning in Elunè.`;
+    const description = req.body.description || `Uploaded volume "${title}" prepared for peaceful reading and AI contemplation in Elunè.`;
     const categoryId = req.body.categoryId || null;
     const requestedVisibility = (req.body.visibility || 'PRIVATE').toUpperCase();
 
-    // RULE:
-    // If admin uploads -> always PUBLIC and APPROVED
-    // Otherwise:
-    // If PRIVATE -> status = APPROVED (owner only)
-    // If PUBLIC -> status = PENDING (requires admin review)
     // STRICT MASTER RESOLUTION
-    // Admin upload: ALWAYS PUBLIC, ALWAYS APPROVED (ignoring any requested visibility)
-    // User upload: PUBLIC -> PENDING, PRIVATE -> APPROVED (immediate owner access)
     const { visibility, status } = resolveBookUploadStatus(req.user, requestedVisibility);
 
+    // Save Book along with structured Chapters and ContentBlocks
     const book = await prisma.book.create({
       data: {
         title,
@@ -375,72 +389,350 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         status,
         rejectionReason: null,
         chapters: {
-          create: extracted.chapters.map((ch) => {
-            const paragraphs = ch.content
-              .split(/\n\s*\n/)
-              .map((p) => p.trim())
-              .filter((p) => p.length > 0);
-
-            const contentBlocks = paragraphs.length > 0
-              ? paragraphs.map((paraText, pIdx) => ({
-                  blockIndex: pIdx + 1,
-                  type: BlockType.PARAGRAPH,
-                  text: paraText,
-                  pageNumber: Math.max(1, Math.ceil((pIdx + 1) / 3))
-                }))
-              : [
-                  {
-                    blockIndex: 1,
-                    type: BlockType.PARAGRAPH,
-                    text: ch.content || 'Opening section',
-                    pageNumber: 1
-                  }
-                ];
-
-            return {
-              chapterNumber: ch.chapterNumber,
-              title: ch.title,
-              contentBlocks: {
-                create: contentBlocks
-              }
-            };
-          })
-        }
+          create: extracted.chapters.map((ch) => ({
+            chapterNumber: ch.chapterNumber,
+            title: ch.title,
+            contentBlocks: {
+              create: ch.contentBlocks.map((block) => ({
+                blockIndex: block.blockIndex,
+                type: BlockType.PARAGRAPH,
+                text: block.text,
+                pageNumber: block.pageNumber,
+                startOffset: block.startOffset || 0,
+                endOffset: block.endOffset || block.text.length,
+              })),
+            },
+          })),
+        },
       },
       include: {
         category: true,
         chapters: {
           include: {
-            contentBlocks: { take: 5 }
-          }
+            contentBlocks: {
+              orderBy: { blockIndex: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    // Create synchronized AudioTracks and AudioSegments for the newly ingested volume
+    try {
+      for (const chapter of book.chapters) {
+        let cumulativeSeconds = 0.0;
+        const segmentData: { contentBlockId: string; startTime: number; endTime: number }[] = [];
+
+        for (const block of chapter.contentBlocks) {
+          const words = block.text.split(/\s+/).length;
+          const duration = Math.max(2.0, parseFloat((words / 2.5).toFixed(1)));
+          const startTime = cumulativeSeconds;
+          const endTime = parseFloat((cumulativeSeconds + duration).toFixed(1));
+          cumulativeSeconds = endTime;
+
+          segmentData.push({
+            contentBlockId: block.id,
+            startTime,
+            endTime,
+          });
+        }
+
+        if (segmentData.length > 0) {
+          await prisma.audioTrack.create({
+            data: {
+              bookId: book.id,
+              chapterId: chapter.id,
+              audioUrl: `/audio/stream/${book.id}/${chapter.id}.mp3`,
+              duration: cumulativeSeconds,
+              segments: {
+                create: segmentData,
+              },
+            },
+          });
         }
       }
-    });
+    } catch (audioInitErr) {
+      console.warn('Audio segment initialization skipped:', audioInitErr);
+    }
 
     // Auto-add to user's library
     await prisma.userBook.upsert({
       where: {
         userId_bookId: {
           userId: req.user.id,
-          bookId: book.id
-        }
+          bookId: book.id,
+        },
       },
       update: {},
       create: {
         userId: req.user.id,
-        bookId: book.id
-      }
+        bookId: book.id,
+      },
     });
 
     const message =
       visibility === 'PUBLIC'
-        ? 'Upload successful. Your book has been submitted for admin review.'
-        : 'Upload successful. Your private book is ready in your personal sanctuary.';
+        ? 'Upload successful. Your book is published and available for all readers.'
+        : 'Upload successful. Your private volume is ready in your personal sanctuary.';
 
     sendSuccess(res, formatBookForResponse(book), message, 201);
   } catch (error: any) {
     console.error('uploadBook error:', error);
     sendError(res, 'Failed to process and upload book', error.message, 500);
+  }
+};
+
+/**
+ * Get Book Content (Canonical chapters, content blocks, pages)
+ */
+export const getBookContent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const book = await prisma.book.findUnique({
+      where: { id },
+      include: {
+        category: true,
+        uploader: { select: { id: true, name: true } },
+        chapters: {
+          orderBy: { chapterNumber: 'asc' },
+          include: {
+            contentBlocks: {
+              orderBy: { blockIndex: 'asc' },
+            },
+            audioTracks: {
+              include: {
+                segments: {
+                  orderBy: { startTime: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!book) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied to this book content', 'FORBIDDEN', 403);
+      return;
+    }
+
+    const chapters = book.chapters.map((ch) => ({
+      id: ch.id,
+      chapterNumber: ch.chapterNumber,
+      title: ch.title,
+      contentBlocks: ch.contentBlocks.map((b) => ({
+        id: b.id,
+        blockIndex: b.blockIndex,
+        type: b.type,
+        text: b.text,
+        pageNumber: b.pageNumber,
+        startOffset: b.startOffset,
+        endOffset: b.endOffset,
+      })),
+      audioTrack: ch.audioTracks[0] || null,
+    }));
+
+    const totalBlocks = chapters.reduce((acc, ch) => acc + ch.contentBlocks.length, 0);
+
+    sendSuccess(
+      res,
+      {
+        book: {
+          id: book.id,
+          title: book.title,
+          author: book.author,
+          description: book.description,
+          category: book.category ? book.category.name : 'General',
+          totalPages: book.totalPages,
+          visibility: book.visibility,
+          status: book.status,
+          chapters,
+        },
+        chapters,
+        pages: book.totalPages,
+        totalBlocks,
+      },
+      'Book content retrieved successfully'
+    );
+  } catch (error: any) {
+    console.error('getBookContent error:', error);
+    sendError(res, 'Failed to fetch book content', error.message, 500);
+  }
+};
+
+/**
+ * Get Book Reading Progress
+ */
+export const getBookProgress = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    if (!req.user) {
+      sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
+      return;
+    }
+
+    const progress = await prisma.readingProgress.findUnique({
+      where: { userId_bookId: { userId: req.user.id, bookId: id } },
+    });
+
+    sendSuccess(res, { progress }, 'Reading progress retrieved');
+  } catch (error: any) {
+    console.error('getBookProgress error:', error);
+    sendError(res, 'Failed to get progress', error.message, 500);
+  }
+};
+
+/**
+ * Save / Update Book Reading Progress
+ */
+export const saveBookProgress = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    if (!req.user) {
+      sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
+      return;
+    }
+
+    const { currentChapterId, currentContentBlockId, currentPage, progressPercentage } = req.body;
+
+    const progress = await prisma.readingProgress.upsert({
+      where: { userId_bookId: { userId: req.user.id, bookId: id } },
+      update: {
+        currentChapterId,
+        currentContentBlockId,
+        currentPage: currentPage || 1,
+        progressPercentage: progressPercentage || 0,
+        lastReadAt: new Date(),
+      },
+      create: {
+        userId: req.user.id,
+        bookId: id,
+        currentChapterId,
+        currentContentBlockId,
+        currentPage: currentPage || 1,
+        progressPercentage: progressPercentage || 0,
+      },
+    });
+
+    sendSuccess(res, { progress }, 'Progress saved successfully');
+  } catch (error: any) {
+    console.error('saveBookProgress error:', error);
+    sendError(res, 'Failed to save progress', error.message, 500);
+  }
+};
+
+/**
+ * Get Audio Tracks & Segments for Book
+ */
+export const getBookAudio = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const book = await prisma.book.findUnique({ where: { id } });
+    if (!book) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied', 'FORBIDDEN', 403);
+      return;
+    }
+
+    const tracks = await prisma.audioTrack.findMany({
+      where: { bookId: id },
+      include: {
+        segments: {
+          orderBy: { startTime: 'asc' },
+        },
+      },
+    });
+
+    sendSuccess(res, { tracks }, 'Book audio tracks retrieved');
+  } catch (error: any) {
+    console.error('getBookAudio error:', error);
+    sendError(res, 'Failed to get audio tracks', error.message, 500);
+  }
+};
+
+/**
+ * Generate Audio Synchronized Segments for Book
+ */
+export const generateBookAudio = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const book = await prisma.book.findUnique({
+      where: { id },
+      include: {
+        chapters: {
+          orderBy: { chapterNumber: 'asc' },
+          include: {
+            contentBlocks: { orderBy: { blockIndex: 'asc' } },
+          },
+        },
+      },
+    });
+
+    if (!book) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied', 'FORBIDDEN', 403);
+      return;
+    }
+
+    const createdTracks = [];
+
+    for (const chapter of book.chapters) {
+      let cumulativeTime = 0.0;
+      const segmentData: { contentBlockId: string; startTime: number; endTime: number }[] = [];
+
+      for (const block of chapter.contentBlocks) {
+        const words = block.text.split(/\s+/).length;
+        const duration = Math.max(2.0, parseFloat((words / 2.5).toFixed(1)));
+        const startTime = cumulativeTime;
+        const endTime = parseFloat((cumulativeTime + duration).toFixed(1));
+        cumulativeTime = endTime;
+
+        segmentData.push({
+          contentBlockId: block.id,
+          startTime,
+          endTime,
+        });
+      }
+
+      // Remove previous tracks for chapter
+      await prisma.audioTrack.deleteMany({ where: { chapterId: chapter.id } });
+
+      const track = await prisma.audioTrack.create({
+        data: {
+          bookId: book.id,
+          chapterId: chapter.id,
+          audioUrl: `/audio/stream/${book.id}/${chapter.id}.mp3`,
+          duration: cumulativeTime,
+          segments: {
+            create: segmentData,
+          },
+        },
+        include: { segments: true },
+      });
+
+      createdTracks.push(track);
+    }
+
+    sendSuccess(res, { tracks: createdTracks }, 'Audio synchronization generated successfully');
+  } catch (error: any) {
+    console.error('generateBookAudio error:', error);
+    sendError(res, 'Failed to generate audio track', error.message, 500);
   }
 };
 

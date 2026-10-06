@@ -99,6 +99,10 @@ export class AIService {
       })
       .join('\n\n');
 
+    if (!aggregatedContent || aggregatedContent.trim().length === 0 || aggregatedContent.includes('could not be converted into readable text')) {
+      throw new Error('This book does not contain readable text, so AI summarization is unavailable.');
+    }
+
     let summaryResult: GeneratedSummary;
 
     if (this.isGeminiConfigured() && this.genAI) {
@@ -175,6 +179,10 @@ ${aggregatedContent}`;
     }
 
     const chapterText = chapter.contentBlocks.map((b) => b.text).join('\n\n');
+    if (!chapterText || chapterText.trim().length === 0 || chapterText.includes('could not be converted into readable text')) {
+      throw new Error('This chapter does not contain readable text for summarization.');
+    }
+
     let result: { summary: string; keyPoints: string[] };
 
     if (this.isGeminiConfigured() && this.genAI) {
@@ -239,6 +247,10 @@ ${chapterText.slice(0, 5000)}`;
     }
 
     const relevantContext = await retrievalService.retrieveContextForQuery(bookId, question);
+    if (!relevantContext || relevantContext.trim().length === 0 || relevantContext.includes('could not be converted into readable text')) {
+      return 'The answer could not be found in this book.';
+    }
+
     let answer = '';
 
     if (this.isGeminiConfigured() && this.genAI) {

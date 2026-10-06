@@ -134,12 +134,26 @@ export const readerService = {
       success: boolean;
       data: {
         book: any;
+        chapters?: any[];
         readingProgress: any;
-        bookmarks: any[];
-        notes: any[];
-        audioSegments: any[];
+        bookmarks?: any[];
+        notes?: any[];
+        userBookmarks?: any[];
+        userNotes?: any[];
+        audioSegments?: any[];
       };
     }>(`/api/reader/${bookId}`),
+
+  getBookContent: (bookId: string) =>
+    api.get<{
+      success: boolean;
+      data: {
+        book: any;
+        chapters: any[];
+        pages: number;
+        totalBlocks: number;
+      };
+    }>(`/api/books/${bookId}/content`),
 
   saveProgress: (
     bookId: string,

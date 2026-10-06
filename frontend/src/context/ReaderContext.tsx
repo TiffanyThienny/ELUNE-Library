@@ -171,12 +171,11 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       const res = await readerService.getReaderData(bookId);
       if (res.success && res.data) {
-        const loadedBook = res.data.book;
-        setBook(loadedBook);
-        setBookmarks(res.data.bookmarks || []);
-        setNotes(res.data.notes || []);
-
-        const chaps = loadedBook.chapters || [];
+        const loadedBook = res.data.book || res.data;
+        const chaps = loadedBook.chapters || res.data.chapters || [];
+        setBook({ ...loadedBook, chapters: chaps });
+        setBookmarks(res.data.bookmarks || res.data.userBookmarks || []);
+        setNotes(res.data.notes || res.data.userNotes || []);
         setChapters(chaps);
 
         // Resume reading position

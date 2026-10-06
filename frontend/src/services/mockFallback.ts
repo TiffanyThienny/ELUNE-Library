@@ -1314,47 +1314,209 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
-  // 15. AI Features (Summary, Scholar Chat, Flashcards, Mind Map)
-  if (path.startsWith('/api/ai/summarize/book/') && method === 'POST') {
+  // 15. Content & Audio Endpoints
+  const contentEndpointMatch = path.match(/^\/api\/books\/([^\/]+)\/content$/);
+  if (contentEndpointMatch && method === 'GET') {
+    const bId = contentEndpointMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bId);
+    if (!book) throw new Error('Book not found');
+
+    const chapters = book.chapters || [];
+    const totalBlocks = chapters.reduce((acc, ch) => acc + (ch.contentBlocks?.length || 0), 0);
+
+    return {
+      success: true,
+      data: {
+        book,
+        chapters,
+        pages: book.totalPages || 1,
+        totalBlocks,
+      },
+      message: 'Book content retrieved successfully',
+    } as T;
+  }
+
+  const audioEndpointMatch = path.match(/^\/api\/books\/([^\/]+)\/audio$/);
+  if (audioEndpointMatch && method === 'GET') {
+    const bId = audioEndpointMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bId);
+
+    const tracks = (book?.chapters || []).map((ch, idx) => {
+      let cumulativeTime = 0.0;
+      const segments = (ch.contentBlocks || []).map((blk, bIdx) => {
+        const words = (blk.text || '').split(/\s+/).length;
+        const duration = Math.max(2.0, parseFloat((words / 2.5).toFixed(1)));
+        const startTime = cumulativeTime;
+        const endTime = parseFloat((cumulativeTime + duration).toFixed(1));
+        cumulativeTime = endTime;
+        return {
+          id: `seg-${ch.id}-${blk.id || bIdx}`,
+          audioTrackId: `track-${bId}-${ch.id}`,
+          contentBlockId: blk.id,
+          startTime,
+          endTime,
+        };
+      });
+
+      return {
+        id: `track-${bId}-${ch.id}`,
+        bookId: bId,
+        chapterId: ch.id,
+        audioUrl: `/audio/stream/${bId}/${ch.id}.mp3`,
+        duration: cumulativeTime,
+        segments,
+      };
+    });
+
+    return {
+      success: true,
+      data: { tracks },
+      message: 'Book audio tracks retrieved',
+    } as T;
+  }
+
+  // 16. AI Features (Summary, Companion Q&A) grounded strictly in extracted book content
+  const bookSummaryMatch = path.match(/^\/api\/ai\/summarize\/book\/([^\/]+)$/);
+  if (bookSummaryMatch && method === 'POST') {
+    const bId = bookSummaryMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bId);
+    if (!book) throw new Error('Book not found');
+
+    const allBlocks = (book.chapters || []).flatMap((c) => c.contentBlocks || []);
+    const fullText = allBlocks.map((b) => b.text).join(' ');
+
+    if (!fullText || fullText.trim().length === 0 || fullText.includes('could not be converted into readable text')) {
+      throw new Error('This book does not contain readable text, so AI summarization is unavailable.');
+    }
+
+    // Build authentic summary from the actual extracted text
+    const keySentences = allBlocks
+      .map((b) => b.text.trim())
+      .filter((t) => t.length > 30)
+      .slice(0, 4);
+
+    const summaryContent = `Executive Synthesis for "${book.title}" (by ${book.author}):
+
+• Core Theme:
+${keySentences[0] || `An exploration of ${book.title}.`}
+
+• Key Exposition:
+${keySentences[1] || 'Detailed analysis of the opening themes.'}
+
+• Continuing Arguments:
+${keySentences[2] || keySentences[0] || 'Central tenets discussed in the volume.'}
+
+• Principal Takeaway:
+${keySentences[3] || 'Consolidation of perspectives and closing reflection.'}`;
+
     return {
       success: true,
       data: {
         summary: {
-          content: `✨ Executive AI Synthesis:
-1. Core Theme: Cultivating mental stillness, inner resilience, and emotional composure in an unpredictable world.
-2. Dichotomy of Control: Differentiating between events outside our power and our internal cognitive responses.
-3. Daily Practice: Maintaining mindful attention (prosoche) and treating each encounter as an opportunity to practice virtue.`
-        }
+          content: summaryContent,
+        },
       },
-      message: 'AI Summary generated'
+      message: 'AI Summary generated from document text',
     } as T;
   }
 
-  if (path.startsWith('/api/ai/summarize/chapter/') && method === 'POST') {
+  const chapterSummaryMatch = path.match(/^\/api\/ai\/summarize\/chapter\/([^\/]+)$/);
+  if (chapterSummaryMatch && method === 'POST') {
+    const chId = chapterSummaryMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const allBooks = [...FALLBACK_BOOKS, ...userUploads];
+    let foundChapter: any = null;
+    let parentBook: any = null;
+
+    for (const b of allBooks) {
+      const c = (b.chapters || []).find((chap: any) => chap.id === chId);
+      if (c) {
+        foundChapter = c;
+        parentBook = b;
+        break;
+      }
+    }
+
+    if (!foundChapter) {
+      return {
+        success: true,
+        data: {
+          summary: {
+            content: 'Chapter Synthesis: The ideas in this section examine foundational principles and provide practical guidance.',
+          },
+        },
+        message: 'Chapter summary generated',
+      } as T;
+    }
+
+    const blocks = foundChapter.contentBlocks || [];
+    const text = blocks.map((b: any) => b.text).join(' ');
+
+    if (!text || text.trim().length === 0 || text.includes('could not be converted into readable text')) {
+      throw new Error('This chapter does not contain readable text for summarization.');
+    }
+
+    const firstFew = blocks.slice(0, 3).map((b: any) => b.text).join('\n\n');
+    const chapterSummary = `Chapter Synthesis — "${foundChapter.title}":\n\nThis section addresses the following arguments from ${parentBook?.title || 'the volume'}:\n\n${firstFew.slice(0, 500)}...`;
+
     return {
       success: true,
       data: {
         summary: {
-          content: 'Chapter Synthesis: Focuses on gratitude, ancestral virtue, and recognizing that difficult people act from ignorance of good and evil.'
-        }
+          content: chapterSummary,
+        },
       },
-      message: 'Chapter summary generated'
+      message: 'Chapter summary generated',
     } as T;
   }
 
-  if (path.startsWith('/api/ai/ask/') && method === 'POST') {
+  const askMatch = path.match(/^\/api\/ai\/ask\/([^\/]+)$/);
+  if (askMatch && method === 'POST') {
+    const bId = askMatch[1];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bId);
     const body = options.body ? JSON.parse(options.body as string) : {};
-    const question = body.question || 'How to find peace?';
+    const question = (body.question || '').trim();
+
+    if (!book) throw new Error('Book not found');
+
+    const allBlocks = (book.chapters || []).flatMap((c) => c.contentBlocks || []);
+    if (allBlocks.length === 0 || allBlocks.every((b) => b.text.includes('could not be converted into readable text'))) {
+      throw new Error('This book does not contain readable text.');
+    }
+
+    // Search text blocks for relevant words
+    const keywords = question
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w: string) => w.length > 3 && !['what', 'when', 'where', 'which', 'about', 'this', 'does', 'that'].includes(w));
+
+    let matchedBlock = allBlocks.find((b) =>
+      keywords.some((k: string) => b.text.toLowerCase().includes(k))
+    );
+
+    let answer = '';
+    if (matchedBlock) {
+      answer = `Based on the text of "${book.title}":\n\n"${matchedBlock.text}"\n\nIn this section, ${book.author} addresses this topic directly.`;
+    } else if (keywords.length === 0 && allBlocks.length > 0) {
+      answer = `In "${book.title}", ${book.author} focuses on:\n\n"${allBlocks[0].text.slice(0, 300)}..."`;
+    } else {
+      answer = 'The answer could not be found in this book.';
+    }
+
     return {
       success: true,
       data: {
         chat: {
           id: `chat_${Date.now()}`,
           question,
-          answer: `Scholar Companion: In response to "${question}" — The text teaches that peace is not found in favorable external circumstances, but within the inner citadel. When you control your interpretations and judgments, no external chaos can disturb your tranquility.`
-        }
+          answer,
+        },
       },
-      message: 'AI response generated'
+      message: 'AI response generated',
     } as T;
   }
 

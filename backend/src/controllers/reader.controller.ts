@@ -65,6 +65,23 @@ export const getReaderData = async (req: Request, res: Response): Promise<void> 
       ]);
     }
 
+    const formattedChapters = book.chapters.map((ch) => ({
+      id: ch.id,
+      chapterNumber: ch.chapterNumber,
+      title: ch.title,
+      contentBlocks: ch.contentBlocks.map((b) => ({
+        id: b.id,
+        blockIndex: b.blockIndex,
+        type: b.type,
+        text: b.text,
+        pageNumber: b.pageNumber,
+        startOffset: b.startOffset || 0,
+        endOffset: b.endOffset || 0,
+      })),
+      audioTrack: ch.audioTracks[0] || null,
+      audioSegments: ch.audioTracks[0]?.segments || [],
+    }));
+
     sendSuccess(
       res,
       {
@@ -72,35 +89,27 @@ export const getReaderData = async (req: Request, res: Response): Promise<void> 
           id: book.id,
           title: book.title,
           author: book.author,
+          description: book.description,
           category: book.category ? book.category.name : 'General',
           coverBg: book.coverBg,
           coverTextColor: book.coverTextColor,
           totalPages: book.totalPages,
           visibility: book.visibility,
-          status: book.status
+          status: book.status,
+          chapters: formattedChapters,
         },
-        chapters: book.chapters.map((ch) => ({
-          id: ch.id,
-          chapterNumber: ch.chapterNumber,
-          title: ch.title,
-          contentBlocks: ch.contentBlocks.map((b) => ({
-            id: b.id,
-            blockIndex: b.blockIndex,
-            type: b.type,
-            text: b.text,
-            pageNumber: b.pageNumber
-          })),
-          audioTrack: ch.audioTracks[0] || null
-        })),
+        chapters: formattedChapters,
         globalAudioTrack: book.audioTracks[0] || null,
+        bookmarks: userBookmarks,
+        notes: userNotes,
         userBookmarks,
         userNotes,
         readingProgress: readingProgress || {
           currentChapterId: book.chapters[0]?.id || null,
           currentContentBlockId: book.chapters[0]?.contentBlocks[0]?.id || null,
           currentPage: 1,
-          progressPercentage: 0
-        }
+          progressPercentage: 0,
+        },
       },
       'Reader session loaded successfully'
     );

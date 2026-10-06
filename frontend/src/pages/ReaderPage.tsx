@@ -230,8 +230,14 @@ export const ReaderPage: React.FC = () => {
                     );
                   })
                 ) : (
-                  <div className="py-12 text-center text-xs text-[#8C7355]">
-                    No paragraph blocks indexed for this chapter yet.
+                  <div className="py-16 text-center space-y-3 bg-[#FAF7F2] rounded-2xl p-6 border border-[#E8DFD3]">
+                    <FileText className="w-8 h-8 text-[#8C7355] mx-auto opacity-70" />
+                    <h3 className="text-sm font-bold text-[#2C2421]">
+                      This PDF could not be converted into readable text.
+                    </h3>
+                    <p className="text-xs text-[#665A4F] max-w-md mx-auto leading-relaxed">
+                      This may happen with scanned or image-only PDFs without digital text streams.
+                    </p>
                   </div>
                 )}
               </div>
