@@ -537,6 +537,131 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
+  // 13. AI Features
+  if (path.startsWith('/api/ai/summarize/book/') && method === 'POST') {
+    return {
+      success: true,
+      data: {
+        summary: {
+          content: `✨ Executive AI Synthesis:
+1. Core Theme: Cultivating mental stillness, inner resilience, and emotional composure in an unpredictable world.
+2. Dichotomy of Control: Differentiating between events outside our power and our internal cognitive responses.
+3. Daily Practice: Maintaining mindful attention (prosoche) and treating each encounter as an opportunity to practice virtue.`
+        }
+      },
+      message: 'AI Summary generated'
+    } as T;
+  }
+
+  if (path.startsWith('/api/ai/summarize/chapter/') && method === 'POST') {
+    return {
+      success: true,
+      data: {
+        summary: {
+          content: 'Chapter Synthesis: Focuses on gratitude, ancestral virtue, and recognizing that difficult people act from ignorance of good and evil.'
+        }
+      },
+      message: 'Chapter summary generated'
+    } as T;
+  }
+
+  if (path.startsWith('/api/ai/ask/') && method === 'POST') {
+    const body = options.body ? JSON.parse(options.body as string) : {};
+    const question = body.question || 'How to find peace?';
+    return {
+      success: true,
+      data: {
+        chat: {
+          role: 'model',
+          message: `Scholar Companion: In response to "${question}" — The text teaches that peace is not found in favorable external circumstances, but within the inner citadel. When you control your interpretations and judgments, no external chaos can disturb your tranquility.`
+        }
+      },
+      message: 'AI response generated'
+    } as T;
+  }
+
+  if (path.startsWith('/api/ai/flashcards/') && method === 'POST') {
+    return {
+      success: true,
+      data: {
+        flashcards: [
+          {
+            question: 'What is the "Inner Citadel" according to Marcus Aurelius?',
+            answer: 'The unassailable part of the rational mind that remains calm regardless of external events.'
+          },
+          {
+            question: 'What does the Dichotomy of Control teach?',
+            answer: 'Only our judgments, intentions, and reactions are within our control; external outcomes are not.'
+          },
+          {
+            question: 'How should one view wrongdoers according to Meditations?',
+            answer: 'As fellow humans blinded by ignorance of good and evil, who should be met with patience rather than anger.'
+          }
+        ]
+      },
+      message: 'Flashcards generated'
+    } as T;
+  }
+
+  if (path.startsWith('/api/ai/quiz/') && method === 'POST') {
+    return {
+      success: true,
+      data: {
+        quizzes: [
+          {
+            question: 'According to Stoic principles, what truly causes emotional distress?',
+            options: [
+              'External circumstances and events',
+              'Our judgments and perceptions about events',
+              'Other people actions',
+              'Physical exhaustion'
+            ],
+            correctAnswer: 'Our judgments and perceptions about events',
+            explanation: 'Events themselves are neutral; only our opinion about them produces distress or anger.'
+          },
+          {
+            question: 'What is the morning reminder suggested by Marcus Aurelius?',
+            options: [
+              'To avoid all social interactions',
+              'That people we meet will be difficult, but share the same divine reason',
+              'To seek immediate praise and accolades',
+              'To amass material wealth before noon'
+            ],
+            correctAnswer: 'That people we meet will be difficult, but share the same divine reason',
+            explanation: 'Remembering our shared human nature enables cooperation instead of conflict.'
+          }
+        ]
+      },
+      message: 'Quiz generated'
+    } as T;
+  }
+
+  if (path.startsWith('/api/ai/mindmap/') && method === 'POST') {
+    return {
+      success: true,
+      data: {
+        mindmap: {
+          title: 'Inner Sanctuary & Philosophy',
+          children: [
+            {
+              title: 'Perception (Mind)',
+              children: [{ title: 'Objective Analysis' }, { title: 'Dichotomy of Control' }]
+            },
+            {
+              title: 'Action (Duty)',
+              children: [{ title: 'Virtue in Practice' }, { title: 'Service to Community' }]
+            },
+            {
+              title: 'Will (Acceptance)',
+              children: [{ title: 'Amor Fati (Love of Fate)' }, { title: 'Transient Nature of Time' }]
+            }
+          ]
+        }
+      },
+      message: 'Mind map generated'
+    } as T;
+  }
+
   // Default fallback response
   return { success: true, data: {}, message: 'Success' } as T;
 }
