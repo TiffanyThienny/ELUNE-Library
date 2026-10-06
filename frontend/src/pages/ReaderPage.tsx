@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { useReader } from '../context/ReaderContext';
-import { aiService } from '../services/api';
 import { LoadingState } from '../components/LoadingState';
 import { AudioPlayer } from '../components/AudioPlayer';
 import { BookmarkButton } from '../components/BookmarkButton';
@@ -9,23 +8,16 @@ import { NoteButton } from '../components/NoteButton';
 import { NotePanel } from '../components/NotePanel';
 import { SummaryPanel } from '../components/SummaryPanel';
 import { AIChat } from '../components/AIChat';
-import { FlashcardCard } from '../components/FlashcardCard';
-import { MindMapModal } from '../components/MindMapModal';
 import { ProgressBar } from '../components/ProgressBar';
 import {
   ChevronLeft,
   ChevronRight,
   Bookmark,
   FileText,
-  Sparkles,
-  BrainCircuit,
-  Network,
-  Headphones,
-  Sliders,
+  BookOpen,
+  MessageSquare,
   ArrowLeft,
-  CheckCircle2,
 } from 'lucide-react';
-import { Flashcard, MindMapNode } from '../types';
 
 export const ReaderPage: React.FC = () => {
   const { bookId } = useParams<{ bookId: string }>();
@@ -47,16 +39,8 @@ export const ReaderPage: React.FC = () => {
     getNote,
   } = useReader();
 
-  const [activeTab, setActiveTab] = useState<'notes' | 'summary' | 'chat' | 'flashcards'>('chat');
+  const [activeTab, setActiveTab] = useState<'notes' | 'summary' | 'chat'>('chat');
   const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl'>('normal');
-
-  // AI interactive states
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
-  const [flashcardsLoading, setFlashcardsLoading] = useState(false);
-
-  const [mindmap, setMindmap] = useState<MindMapNode | null>(null);
-  const [mindmapOpen, setMindmapOpen] = useState(false);
-  const [mindmapLoading, setMindmapLoading] = useState(false);
 
   // Load book data
   useEffect(() => {
@@ -81,39 +65,7 @@ export const ReaderPage: React.FC = () => {
     }
   }, [searchParams, currentChapter]);
 
-  // AI Flashcards Fetcher
-  const handleLoadFlashcards = async () => {
-    if (!book) return;
-    setFlashcardsLoading(true);
-    try {
-      const res = await aiService.getFlashcards(book.id);
-      if (res.success && res.data?.flashcards) {
-        setFlashcards(res.data.flashcards);
-      }
-    } catch (e) {
-      console.error('Failed to load flashcards', e);
-    } finally {
-      setFlashcardsLoading(false);
-    }
-  };
 
-  // AI Mind Map Fetcher
-  const handleOpenMindmap = async () => {
-    setMindmapOpen(true);
-    if (!mindmap && book) {
-      setMindmapLoading(true);
-      try {
-        const res = await aiService.getMindMap(book.id);
-        if (res.success && res.data?.mindmap) {
-          setMindmap(res.data.mindmap);
-        }
-      } catch (e) {
-        console.error('Failed to generate mind map', e);
-      } finally {
-        setMindmapLoading(false);
-      }
-    }
-  };
 
   if (loading) {
     return <LoadingState message="Opening book in comfortable reader sanctuary..." fullPage />;
@@ -170,23 +122,15 @@ export const ReaderPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Reader Preferences & AI shortcuts */}
+          {/* Reader Preferences & Chapter shortcuts */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setActiveTab('summary')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E8DFD3] hover:bg-[#FAF7F2] text-[#2C2421] text-xs font-semibold transition-colors shadow-2xs"
-              title="Open AI Summary"
+              title="Open Chapter Summary"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#8C7355]" />
-              <span className="hidden sm:inline">AI Summary</span>
-            </button>
-
-            <button
-              onClick={handleOpenMindmap}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EBDDC8] hover:bg-[#D9C8B4] text-[#2C2421] text-xs font-semibold transition-colors shadow-2xs"
-            >
-              <Network className="w-3.5 h-3.5" />
-              Mind Map
+              <FileText className="w-3.5 h-3.5 text-[#8C7355]" />
+              <span className="hidden sm:inline">Summary</span>
             </button>
 
             {/* Font size picker */}
@@ -211,8 +155,8 @@ export const ReaderPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="hidden md:block w-28">
-              <ProgressBar progress={progressPercentage} showPercent />
+            <div className="hidden md:block w-32" title={`Reading Progress: ${Math.round(progressPercentage)}% completed`}>
+              <ProgressBar progress={progressPercentage} label="Progress" showPercent />
             </div>
           </div>
         </div>
@@ -326,23 +270,23 @@ export const ReaderPage: React.FC = () => {
           {/* AI & Annotation Companion Container */}
           <div className="bg-white border border-[#E8DFD3] rounded-3xl p-4 shadow-xs space-y-4">
             {/* Tool Tabs */}
-            <div className="grid grid-cols-4 gap-1 bg-[#FAF7F2] border border-[#E8DFD3] p-1 rounded-2xl">
+            <div className="grid grid-cols-3 gap-1 bg-[#FAF7F2] border border-[#E8DFD3] p-1 rounded-2xl">
               <button
                 onClick={() => setActiveTab('chat')}
-                title="Scholar AI Chat"
+                title="Reading Companion Q&A"
                 className={`py-2 rounded-xl text-xs font-semibold transition-all flex flex-col items-center justify-center gap-0.5 ${
                   activeTab === 'chat'
                     ? 'bg-[#2C2421] text-white shadow-2xs'
                     : 'text-[#8C7355] hover:text-[#2C2421]'
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span className="text-[10px]">AI Q&A</span>
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span className="text-[10px]">Q&A</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('summary')}
-                title="Synthesize Summary"
+                title="Chapter Summary"
                 className={`py-2 rounded-xl text-xs font-semibold transition-all flex flex-col items-center justify-center gap-0.5 ${
                   activeTab === 'summary'
                     ? 'bg-[#2C2421] text-white shadow-2xs'
@@ -351,22 +295,6 @@ export const ReaderPage: React.FC = () => {
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span className="text-[10px]">Summary</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setActiveTab('flashcards');
-                  if (flashcards.length === 0) handleLoadFlashcards();
-                }}
-                title="Study Flashcards"
-                className={`py-2 rounded-xl text-xs font-semibold transition-all flex flex-col items-center justify-center gap-0.5 ${
-                  activeTab === 'flashcards'
-                    ? 'bg-[#2C2421] text-white shadow-2xs'
-                    : 'text-[#8C7355] hover:text-[#2C2421]'
-                }`}
-              >
-                <BrainCircuit className="w-3.5 h-3.5" />
-                <span className="text-[10px]">Cards</span>
               </button>
 
               <button
@@ -390,62 +318,10 @@ export const ReaderPage: React.FC = () => {
               {activeTab === 'summary' && <SummaryPanel />}
 
               {activeTab === 'notes' && <NotePanel />}
-
-              {activeTab === 'flashcards' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-[#F2ECE1]">
-                    <span className="text-xs font-bold text-[#8C7355] uppercase tracking-wider">
-                      Concept Flashcards
-                    </span>
-                    <button
-                      onClick={handleLoadFlashcards}
-                      disabled={flashcardsLoading}
-                      className="text-xs font-semibold text-[#2C2421] hover:text-[#8C7355]"
-                    >
-                      {flashcardsLoading ? 'Generating...' : 'Refresh'}
-                    </button>
-                  </div>
-
-                  {flashcardsLoading ? (
-                    <LoadingState message="Extracting core memory concepts..." />
-                  ) : flashcards.length > 0 ? (
-                    <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                      {flashcards.map((fc, i) => (
-                        <FlashcardCard
-                          key={fc.id || i}
-                          flashcard={fc}
-                          index={i}
-                          total={flashcards.length}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center bg-[#FAF7F2] rounded-2xl border border-[#E8DFD3]">
-                      <BrainCircuit className="w-6 h-6 text-[#8C7355] mx-auto mb-2 opacity-70" />
-                      <p className="text-xs font-bold text-[#2C2421]">No flashcards yet</p>
-                      <button
-                        onClick={handleLoadFlashcards}
-                        className="mt-3 px-4 py-2 bg-[#2C2421] text-white text-xs font-semibold rounded-xl"
-                      >
-                        Generate Flashcards
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </aside>
       </div>
-
-      {/* Mind Map Modal */}
-      <MindMapModal
-        isOpen={mindmapOpen}
-        onClose={() => setMindmapOpen(false)}
-        mindmap={mindmap}
-        loading={mindmapLoading}
-        bookTitle={book.title}
-      />
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
-import { Send, Bot, User, Sparkles } from 'lucide-react';
+import { Send, BookOpen, User, MessageSquare } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
@@ -57,11 +57,11 @@ export const AIChat: React.FC = () => {
       {/* Header */}
       <div className="p-3 border-b border-[#F2ECE1] bg-[#FAF7F2] flex items-center gap-2">
         <div className="w-6 h-6 rounded-lg bg-[#2C2421] text-white flex items-center justify-center">
-          <Sparkles className="w-3.5 h-3.5" />
+          <BookOpen className="w-3.5 h-3.5" />
         </div>
         <div>
-          <h4 className="text-xs font-bold text-[#2C2421]">Elunè Scholar AI</h4>
-          <p className="text-[10px] text-[#8C7355]">Answers exclusively grounded in this book</p>
+          <h4 className="text-xs font-bold text-[#2C2421]">Reading Companion</h4>
+          <p className="text-[10px] text-[#8C7355]">Inquire about ideas and passages in this book</p>
         </div>
       </div>
 
@@ -69,7 +69,7 @@ export const AIChat: React.FC = () => {
       <div className="flex-1 p-3 overflow-y-auto space-y-3">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-4 text-[#8C7355]">
-            <Bot className="w-8 h-8 opacity-40 mb-2" />
+            <MessageSquare className="w-8 h-8 opacity-40 mb-2" />
             <p className="text-xs font-semibold text-[#2C2421]">Inquire about the text</p>
             <p className="text-[11px] text-[#665A4F] mt-1 max-w-[220px]">
               Ask questions about characters, philosophical concepts, or specific arguments within the book.
@@ -82,8 +82,8 @@ export const AIChat: React.FC = () => {
               className={`flex gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {msg.sender === 'ai' && (
-                <div className="w-6 h-6 rounded-full bg-[#EBDDC8] text-[#2C2421] flex items-center justify-center shrink-0 mt-0.5">
-                  <Bot className="w-3.5 h-3.5" />
+                <div className="w-6 h-6 rounded-full bg-[#EBDDC8] text-[#2C2421] flex items-center justify-center shrink-0 mt-0.5" title="Reading Companion">
+                  <BookOpen className="w-3.5 h-3.5" />
                 </div>
               )}
 

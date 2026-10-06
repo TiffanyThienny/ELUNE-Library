@@ -9,7 +9,6 @@ import {
   VolumeX,
   Gauge,
   Headphones,
-  Sparkles,
 } from 'lucide-react';
 
 export const AudioPlayer: React.FC = () => {
@@ -139,31 +138,37 @@ export const AudioPlayer: React.FC = () => {
           <div className="relative">
             <button
               onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-[#665A4F] hover:bg-[#F2ECE1] transition-colors border border-[#E8DFD3]"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-[#665A4F] hover:bg-[#F2ECE1] transition-colors border border-[#E8DFD3]"
             >
               <Gauge className="w-3 h-3" />
               <span>{playbackSpeed}x</span>
             </button>
 
             {showSpeedMenu && (
-              <div className="absolute right-0 bottom-full mb-1 bg-white rounded-xl shadow-lg border border-[#E8DFD3] p-1 z-20 flex flex-col gap-0.5">
-                {speedOptions.map((speed) => (
-                  <button
-                    key={speed}
-                    onClick={() => {
-                      setSpeed(speed);
-                      setShowSpeedMenu(false);
-                    }}
-                    className={`px-3 py-1 text-xs rounded-lg text-left font-medium transition-colors ${
-                      playbackSpeed === speed
-                        ? 'bg-[#2C2421] text-white'
-                        : 'text-[#2C2421] hover:bg-[#FAF7F2]'
-                    }`}
-                  >
-                    {speed}x
-                  </button>
-                ))}
-              </div>
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowSpeedMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 bg-white rounded-xl shadow-xl border border-[#E8DFD3] p-1.5 z-50 min-w-[70px] flex flex-col gap-0.5 animate-in fade-in slide-in-from-top-1">
+                  {speedOptions.map((speed) => (
+                    <button
+                      key={speed}
+                      onClick={() => {
+                        setSpeed(speed);
+                        setShowSpeedMenu(false);
+                      }}
+                      className={`px-3 py-1.5 text-xs rounded-lg text-left font-medium transition-colors ${
+                        playbackSpeed === speed
+                          ? 'bg-[#2C2421] text-white'
+                          : 'text-[#2C2421] hover:bg-[#FAF7F2]'
+                      }`}
+                    >
+                      {speed}x
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -218,12 +223,12 @@ export const AudioPlayer: React.FC = () => {
     <div className="bg-white border border-[#E8DFD3] rounded-2xl p-4 shadow-sm space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#2C2421] text-[#FAF7F2] flex items-center justify-center shadow-2xs">
-            <Sparkles className="w-4 h-4 text-[#EBDDC8]" />
+          <div className="w-8 h-8 rounded-xl bg-[#FAF7F2] border border-[#E8DFD3] text-[#8C7355] flex items-center justify-center shadow-2xs">
+            <Volume2 className="w-4 h-4 text-[#8C7355]" />
           </div>
           <div>
             <p className="text-xs font-bold text-[#2C2421] flex items-center gap-1.5">
-              <span>AI Audio Narration</span>
+              <span>Audio Narration</span>
               {ttsSpeaking && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               )}
@@ -247,27 +252,33 @@ export const AudioPlayer: React.FC = () => {
           </button>
 
           {showSpeedMenu && (
-            <div className="absolute right-0 bottom-full mb-1 bg-white rounded-xl shadow-lg border border-[#E8DFD3] p-1 z-20 flex flex-col gap-0.5">
-              {speedOptions.map((speed) => (
-                <button
-                  key={speed}
-                  onClick={() => {
-                    setSpeed(speed);
-                    setShowSpeedMenu(false);
-                    if (ttsSpeaking) {
-                      speakBlock(currentBlockIndex);
-                    }
-                  }}
-                  className={`px-3 py-1 text-xs rounded-lg text-left font-medium transition-colors ${
-                    playbackSpeed === speed
-                      ? 'bg-[#2C2421] text-white'
-                      : 'text-[#2C2421] hover:bg-[#FAF7F2]'
-                  }`}
-                >
-                  {speed}x
-                </button>
-              ))}
-            </div>
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowSpeedMenu(false)}
+              />
+              <div className="absolute right-0 top-full mt-1.5 bg-white rounded-xl shadow-xl border border-[#E8DFD3] p-1.5 z-50 min-w-[70px] flex flex-col gap-0.5 animate-in fade-in slide-in-from-top-1">
+                {speedOptions.map((speed) => (
+                  <button
+                    key={speed}
+                    onClick={() => {
+                      setSpeed(speed);
+                      setShowSpeedMenu(false);
+                      if (ttsSpeaking) {
+                        speakBlock(currentBlockIndex);
+                      }
+                    }}
+                    className={`px-3 py-1.5 text-xs rounded-lg text-left font-medium transition-colors ${
+                      playbackSpeed === speed
+                        ? 'bg-[#2C2421] text-white'
+                        : 'text-[#2C2421] hover:bg-[#FAF7F2]'
+                    }`}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

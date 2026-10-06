@@ -9,7 +9,7 @@ import {
   BookOpen,
   BookmarkPlus,
   BookmarkCheck,
-  Sparkles,
+  FileText,
   Lock,
   Globe,
   Clock,
@@ -255,18 +255,18 @@ export const BookDetailPage: React.FC = () => {
               disabled={summaryLoading}
               className="px-5 py-3 rounded-2xl border border-[#E8DFD3] bg-white hover:bg-[#FAF7F2] text-[#2C2421] text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              <Sparkles className="w-4 h-4 text-[#8C7355]" />
-              {summaryLoading ? 'Generating AI Summary...' : 'AI Summary'}
+              <FileText className="w-4 h-4 text-[#8C7355]" />
+              {summaryLoading ? 'Synthesizing Summary...' : 'Book Summary'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* AI Summary Section if generated */}
+      {/* Summary Section if generated */}
       {summary && (
         <div className="bg-white border border-[#E8DFD3] rounded-3xl p-6 sm:p-8 shadow-xs space-y-3">
           <div className="flex items-center gap-2 text-xs font-bold text-[#8C7355] uppercase tracking-wider">
-            <Sparkles className="w-4 h-4" />
+            <FileText className="w-4 h-4" />
             Executive Synthesis
           </div>
           <div className="font-serif-literata text-xs sm:text-sm text-[#2C2421] leading-relaxed whitespace-pre-line">

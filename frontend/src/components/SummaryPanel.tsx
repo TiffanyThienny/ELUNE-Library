@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
-import { Sparkles, BookOpen, Layers, RefreshCw } from 'lucide-react';
+import { FileText, BookOpen, Layers, RefreshCw } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 
 export const SummaryPanel: React.FC = () => {
@@ -85,7 +85,7 @@ export const SummaryPanel: React.FC = () => {
       {/* Loading */}
       {loading && (
         <div className="p-6 bg-white border border-[#E8DFD3] rounded-2xl">
-          <LoadingState message="Distilling wisdom with Gemini AI..." />
+          <LoadingState message="Distilling chapter synthesis..." />
         </div>
       )}
 
@@ -101,7 +101,7 @@ export const SummaryPanel: React.FC = () => {
         <div className="p-4 bg-white border border-[#E8DFD3] rounded-2xl shadow-xs space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-[#F2ECE1]">
             <span className="text-xs font-bold text-[#8C7355] uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
+              <FileText className="w-3.5 h-3.5" />
               {summaryType === 'CHAPTER' ? 'Chapter Synthesis' : 'Comprehensive Synopsis'}
             </span>
             <button
@@ -121,8 +121,8 @@ export const SummaryPanel: React.FC = () => {
 
       {!summary && !loading && (
         <div className="p-6 text-center bg-white border border-[#E8DFD3] rounded-2xl">
-          <Sparkles className="w-6 h-6 text-[#8C7355] mx-auto mb-2 opacity-70" />
-          <h4 className="text-xs font-bold text-[#2C2421] mb-1">AI-Powered Synthesis</h4>
+          <FileText className="w-6 h-6 text-[#8C7355] mx-auto mb-2 opacity-70" />
+          <h4 className="text-xs font-bold text-[#2C2421] mb-1">Text Synthesis</h4>
           <p className="text-[11px] text-[#665A4F] leading-normal">
             Choose whether to synthesize the active chapter or the overarching themes of the entire book.
           </p>
