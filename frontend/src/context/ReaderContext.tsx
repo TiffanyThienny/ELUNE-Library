@@ -34,7 +34,7 @@ interface ReaderContextType {
   pauseAudio: () => void;
   seekAudio: (seconds: number) => void;
   setSpeed: (speed: number) => void;
-  jumpToParagraph: (contentBlockId: string, autoPlayAudio?: boolean) => void;
+  jumpToParagraph: (contentBlockId: string, autoPlayAudio?: boolean, chapterId?: string) => void;
   nextParagraph: () => void;
   prevParagraph: () => void;
 
@@ -260,19 +260,45 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Jump to paragraph (Reader -> Audio Sync & Navigation)
-  const jumpToParagraph = (contentBlockId: string, autoPlayAudio: boolean = false) => {
-    setCurrentContentBlockId(contentBlockId);
+  // Jump to paragraph (Reader -> Audio Sync & Navigation with cross-chapter support)
+  const jumpToParagraph = async (contentBlockId: string, autoPlayAudio: boolean = false, chapterId?: string) => {
+    // 1. Determine target chapter & block
+    let targetChapter = currentChapter;
+    let targetBlock = currentChapter?.contentBlocks?.find((b) => b.id === contentBlockId);
 
-    // Find block
-    if (currentChapter?.contentBlocks) {
-      const blk = currentChapter.contentBlocks.find((b) => b.id === contentBlockId);
-      if (blk && blk.pageNumber) {
-        setCurrentPage(blk.pageNumber);
+    if (!targetBlock || (chapterId && chapterId !== currentChapter?.id)) {
+      if (chapterId) {
+        targetChapter = chapters.find((c) => c.id === chapterId) || targetChapter;
+      }
+      if (!targetBlock && targetChapter) {
+        targetBlock = targetChapter.contentBlocks?.find((b) => b.id === contentBlockId);
+      }
+      if (!targetBlock) {
+        for (const chap of chapters) {
+          const found = chap.contentBlocks?.find((b) => b.id === contentBlockId);
+          if (found) {
+            targetChapter = chap;
+            targetBlock = found;
+            break;
+          }
+        }
       }
     }
 
-    // Find corresponding audio segment
+    // 2. If chapter changed, switch chapter first
+    if (targetChapter && targetChapter.id !== currentChapter?.id && book) {
+      setCurrentChapter(targetChapter);
+      pauseAudio();
+      await loadChapterAudio(book.id, targetChapter.id);
+    }
+
+    // 3. Set content block & page
+    setCurrentContentBlockId(contentBlockId);
+    if (targetBlock && targetBlock.pageNumber) {
+      setCurrentPage(targetBlock.pageNumber);
+    }
+
+    // 4. Find corresponding audio segment
     const segment = audioSegments.find((s) => s.contentBlockId === contentBlockId);
     if (segment && audioElementRef.current) {
       audioElementRef.current.currentTime = segment.startTime;
@@ -283,11 +309,13 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
 
-    // Scroll to element
-    const elem = document.getElementById(`content-block-${contentBlockId}`);
-    if (elem) {
-      elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    // 5. Scroll to element smoothly
+    setTimeout(() => {
+      const elem = document.getElementById(`content-block-${contentBlockId}`);
+      if (elem) {
+        elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
   };
 
   // Paragraph step controls

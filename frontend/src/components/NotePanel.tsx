@@ -27,7 +27,13 @@ export const NotePanel: React.FC = () => {
             <span>Page {note.pageNumber}</span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => jumpToParagraph(note.contentBlockId)}
+                onClick={() =>
+                  jumpToParagraph(
+                    note.contentBlockId,
+                    false,
+                    note.chapterId || (note as any).chapter?.id
+                  )
+                }
                 className="flex items-center gap-0.5 text-[#2C2421] hover:text-[#8C7355] font-semibold"
               >
                 Jump <ArrowUpRight className="w-3 h-3" />

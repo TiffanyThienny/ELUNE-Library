@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
 import { Sparkles, BookOpen, Layers, RefreshCw } from 'lucide-react';
@@ -10,6 +10,12 @@ export const SummaryPanel: React.FC = () => {
   const [summaryType, setSummaryType] = useState<'CHAPTER' | 'BOOK'>('CHAPTER');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentChapter && !summary) {
+      generateChapterSummary();
+    }
+  }, [currentChapter?.id]);
 
   const generateChapterSummary = async () => {
     if (!currentChapter) return;

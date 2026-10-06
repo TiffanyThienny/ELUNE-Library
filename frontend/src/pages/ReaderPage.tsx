@@ -170,8 +170,17 @@ export const ReaderPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Reader Preferences & Mindmap button */}
-          <div className="flex items-center gap-3">
+          {/* Reader Preferences & AI shortcuts */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => setActiveTab('summary')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E8DFD3] hover:bg-[#FAF7F2] text-[#2C2421] text-xs font-semibold transition-colors shadow-2xs"
+              title="Open AI Summary"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#8C7355]" />
+              <span className="hidden sm:inline">AI Summary</span>
+            </button>
+
             <button
               onClick={handleOpenMindmap}
               className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EBDDC8] hover:bg-[#D9C8B4] text-[#2C2421] text-xs font-semibold transition-colors shadow-2xs"
@@ -229,7 +238,6 @@ export const ReaderPage: React.FC = () => {
               <div className="space-y-6">
                 {currentChapter?.contentBlocks && currentChapter.contentBlocks.length > 0 ? (
                   currentChapter.contentBlocks.map((block) => {
-                    const isActive = currentContentBlockId === block.id;
                     const bookmarked = isBookmarked(block.id);
                     const note = getNote(block.id);
 
@@ -237,11 +245,11 @@ export const ReaderPage: React.FC = () => {
                       <div
                         key={block.id}
                         id={`content-block-${block.id}`}
-                        onClick={() => jumpToParagraph(block.id, true)}
-                        className={`group relative p-3 rounded-2xl cursor-pointer transition-all duration-200 ${
-                          isActive
-                            ? 'bg-[#F4EBD9]/60 border-l-4 border-[#8C7355] shadow-xs'
-                            : 'hover:bg-[#FAF7F2]'
+                        onClick={() => jumpToParagraph(block.id, false)}
+                        className={`group relative transition-all duration-200 ${
+                          bookmarked
+                            ? 'bg-[#F4EBD9]/80 border-l-4 border-[#8C7355] rounded-2xl p-4 shadow-xs my-3'
+                            : 'p-2 rounded-xl my-1 hover:bg-[#FAF7F2]/60'
                         }`}
                       >
                         {/* Hover Annotation Bar (Bookmark + Note) */}
@@ -318,7 +326,7 @@ export const ReaderPage: React.FC = () => {
           {/* AI & Annotation Companion Container */}
           <div className="bg-white border border-[#E8DFD3] rounded-3xl p-4 shadow-xs space-y-4">
             {/* Tool Tabs */}
-            <div className="grid grid-cols-5 gap-1 bg-[#FAF7F2] border border-[#E8DFD3] p-1 rounded-2xl">
+            <div className="grid grid-cols-4 gap-1 bg-[#FAF7F2] border border-[#E8DFD3] p-1 rounded-2xl">
               <button
                 onClick={() => setActiveTab('chat')}
                 title="Scholar AI Chat"
