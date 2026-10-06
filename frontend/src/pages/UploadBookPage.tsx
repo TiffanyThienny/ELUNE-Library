@@ -43,7 +43,7 @@ export const UploadBookPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [language, setLanguage] = useState('English');
-  const [visibility, setVisibility] = useState<'PRIVATE' | 'PUBLIC'>(isAdmin ? 'PUBLIC' : 'PUBLIC');
+  const [visibility, setVisibility] = useState<'PRIVATE' | 'PUBLIC'>(isAdmin ? 'PUBLIC' : 'PRIVATE');
 
   const [bookFile, setBookFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -311,32 +311,6 @@ export const UploadBookPage: React.FC = () => {
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Public option */}
-              <label
-                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                  visibility === 'PUBLIC'
-                    ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
-                    : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="visibility"
-                  value="PUBLIC"
-                  checked={visibility === 'PUBLIC'}
-                  onChange={() => setVisibility('PUBLIC')}
-                  className="mt-1 accent-[#8C7355]"
-                />
-                <div>
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
-                    <Globe className="w-3.5 h-3.5 text-[#8C7355]" /> Public
-                  </span>
-                  <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                    Visible immediately in the Explore catalog for all readers.
-                  </span>
-                </div>
-              </label>
-
               {/* Private option */}
               <label
                 className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
@@ -355,10 +329,36 @@ export const UploadBookPage: React.FC = () => {
                 />
                 <div>
                   <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
-                    <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private
+                    <Lock className="w-3.5 h-3.5 text-[#8C7355]" /> Private (Personal)
                   </span>
                   <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
-                    Only you can access this book in your personal library.
+                    Immediate personal access. Only you can read, summarize, and listen to this volume.
+                  </span>
+                </div>
+              </label>
+
+              {/* Public option */}
+              <label
+                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                  visibility === 'PUBLIC'
+                    ? 'border-[#8C7355] bg-[#F4EBD9]/40 shadow-xs'
+                    : 'border-[#E8DFD3] bg-[#FAF7F2] hover:bg-[#F2ECE1]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="PUBLIC"
+                  checked={visibility === 'PUBLIC'}
+                  onChange={() => setVisibility('PUBLIC')}
+                  className="mt-1 accent-[#8C7355]"
+                />
+                <div>
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[#2C2421]">
+                    <Globe className="w-3.5 h-3.5 text-[#8C7355]" /> Public (Requires Admin Approval)
+                  </span>
+                  <span className="block text-[11px] text-[#665A4F] mt-0.5 leading-snug">
+                    Share with all readers. Requires admin review before publishing to public Explore.
                   </span>
                 </div>
               </label>

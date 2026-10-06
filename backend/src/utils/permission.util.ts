@@ -67,15 +67,15 @@ export function resolveBookUploadStatus(
     };
   }
 
-  // USER UPLOAD + PUBLIC -> APPROVED (immediately visible in public catalog)
+  // USER UPLOAD + PUBLIC -> PENDING (requires admin review before public catalog publication)
   if (String(requestedVisibility).toUpperCase() === 'PUBLIC') {
     return {
       visibility: Visibility.PUBLIC,
-      status: BookStatus.APPROVED
+      status: BookStatus.PENDING
     };
   }
 
-  // USER UPLOAD + PRIVATE -> APPROVED (immediate owner access, private)
+  // USER UPLOAD + PRIVATE -> APPROVED (immediate personal access for uploader)
   return {
     visibility: Visibility.PRIVATE,
     status: BookStatus.APPROVED

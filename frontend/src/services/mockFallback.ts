@@ -663,16 +663,36 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       }
     }
 
-    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || '{}');
+    const currentUser = (() => {
+      try {
+        const saved = localStorage.getItem('elune_user') || localStorage.getItem('elune_auth_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    })();
     const isAdmin = currentUser?.role === 'ADMIN';
 
-    // Core rule: If admin uploads, it is ALWAYS PUBLIC
-    if (isAdmin) {
-      visibility = 'PUBLIC';
-    }
+    // Core rule requested by user:
+    // If admin uploads: ALWAYS PUBLIC and APPROVED
+    // If user uploads:
+    // - PRIVATE: immediately APPROVED and readable by owner!
+    // - PUBLIC: PENDING (must wait for admin approval before others can see it)
+    let finalVisibility = visibility;
+    let status = 'APPROVED';
 
-    // Both PUBLIC and PRIVATE uploaded books are immediately APPROVED so results appear right away
-    const status = 'APPROVED';
+    if (isAdmin) {
+      finalVisibility = 'PUBLIC';
+      status = 'APPROVED';
+    } else {
+      if (String(visibility).toUpperCase() === 'PUBLIC') {
+        finalVisibility = 'PUBLIC';
+        status = 'PENDING';
+      } else {
+        finalVisibility = 'PRIVATE';
+        status = 'APPROVED';
+      }
+    }
 
     const matchedCat = FALLBACK_CATEGORIES.find((c) => c.id === categoryId) || FALLBACK_CATEGORIES[0];
     const newBookId = `uploaded-${Date.now()}`;
@@ -712,13 +732,13 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       totalPages,
       language,
       fileType: 'CANONICAL',
-      visibility: visibility as any,
+      visibility: finalVisibility as any,
       status: status as any,
-      uploadedBy: currentUser?.id || 'usr_current',
+      uploadedBy: currentUser?.id || currentUser?.email || 'usr_standard',
       uploader: {
-        id: currentUser?.id || 'usr_current',
-        name: currentUser?.name || author,
-        email: currentUser?.email || 'reader@elune.read',
+        id: currentUser?.id || 'usr_standard',
+        name: currentUser?.name || author || 'Marcus Chen',
+        email: currentUser?.email || 'user@elune.read',
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -750,18 +770,41 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     if (targetBook.visibility === 'PUBLIC' && targetBook.status === 'APPROVED') {
       return true;
     }
-    // Any other status requires authenticated user
-    if (!currentUser || !currentUser.id) {
-      return false;
-    }
-    // Admin has access
-    if (currentUser.role === 'ADMIN') {
+    // 2. Admin has access to all volumes
+    if (currentUser && currentUser.role === 'ADMIN') {
       return true;
     }
-    // Owner has access (whether PRIVATE, PENDING, or REJECTED)
-    if (targetBook.uploadedBy && (targetBook.uploadedBy === currentUser.id || targetBook.uploadedBy === currentUser.email)) {
+    // 3. Authenticated owner / uploader can access (whether PRIVATE, PENDING, or REJECTED)
+    if (currentUser) {
+      const uid = String(currentUser.id || '');
+      const umail = String(currentUser.email || '').toLowerCase();
+      const bUploaderId = String(targetBook.uploadedBy || '');
+      const bUploaderEmail = String(targetBook.uploader?.email || '').toLowerCase();
+      const bUploaderObjId = String(targetBook.uploader?.id || '');
+
+      if (
+        (bUploaderId && (bUploaderId === uid || bUploaderId.toLowerCase() === umail)) ||
+        (bUploaderObjId && (bUploaderObjId === uid || bUploaderObjId.toLowerCase() === umail)) ||
+        (bUploaderEmail && bUploaderEmail === umail)
+      ) {
+        return true;
+      }
+    }
+    // 4. Session / local upload check: if uploaded in this browser, user always has access
+    try {
+      const localUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+      if (localUploads.some((b) => b.id === targetBook.id)) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 5. Fallback for demo guest session
+    if (targetBook.uploadedBy === 'usr_current' || targetBook.uploader?.id === 'usr_current') {
       return true;
     }
+
     return false;
   };
 
@@ -775,7 +818,14 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       throw new Error(`Book not found with ID ${id}`);
     }
 
-    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    const currentUser = (() => {
+      try {
+        const saved = localStorage.getItem('elune_user') || localStorage.getItem('elune_auth_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    })();
     if (!canAccessMockBook(book, currentUser)) {
       throw new Error('Access denied. You do not have permission to view this volume.');
     }
@@ -797,7 +847,14 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       throw new Error('Book not found');
     }
 
-    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    const currentUser = (() => {
+      try {
+        const saved = localStorage.getItem('elune_user') || localStorage.getItem('elune_auth_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    })();
     if (!canAccessMockBook(book, currentUser)) {
       throw new Error('Access denied. You do not have permission to read this volume.');
     }
@@ -827,7 +884,14 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
 
   // 10. Personal Library
   if (path === '/api/library' && method === 'GET') {
-    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    const currentUser = (() => {
+      try {
+        const saved = localStorage.getItem('elune_user') || localStorage.getItem('elune_auth_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    })();
     const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
     const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
     const allAvailable = [...FALLBACK_BOOKS, ...userUploads];
@@ -845,7 +909,14 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
 
   if (path.startsWith('/api/library/') && method === 'POST') {
     const bookId = path.replace('/api/library/', '');
-    const currentUser = JSON.parse(localStorage.getItem('elune_auth_user') || 'null');
+    const currentUser = (() => {
+      try {
+        const saved = localStorage.getItem('elune_user') || localStorage.getItem('elune_auth_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    })();
     const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
     const targetBook = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bookId);
 
