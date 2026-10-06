@@ -43,7 +43,6 @@ export const UserDashboardPage: React.FC = () => {
     booksRead: 0,
     booksSaved: 0,
     summaries: 0,
-    quizzesCompleted: 0,
     bookmarks: 0,
     notes: 0,
   };
@@ -54,7 +53,6 @@ export const UserDashboardPage: React.FC = () => {
     { label: 'Bookmarks', value: stats.bookmarks, icon: Bookmark, color: 'text-[#8C7355]' },
     { label: 'Reflective Notes', value: stats.notes, icon: FileText, color: 'text-emerald-800' },
     { label: 'AI Summaries', value: stats.summaries, icon: Sparkles, color: 'text-indigo-800' },
-    { label: 'Quizzes Taken', value: stats.quizzesCompleted, icon: HelpCircle, color: 'text-rose-800' },
   ];
 
   return (
@@ -95,7 +93,7 @@ export const UserDashboardPage: React.FC = () => {
         <h2 className="font-serif-literata text-xl font-bold text-[#2C2421]">
           Your Learning Statistics
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {statCards.map((card, idx) => {
             const Icon = card.icon;
             return (

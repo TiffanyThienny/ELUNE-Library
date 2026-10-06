@@ -86,7 +86,7 @@ export const LandingPage: React.FC = () => {
               Grounded AI Companion
             </h3>
             <p className="text-xs sm:text-sm text-[#665A4F] leading-relaxed">
-              Synthesize chapters, test your knowledge with interactive quizzes and flashcards, and ask questions answered strictly from the book's verified text.
+              Synthesize chapters, test your knowledge with concept flashcards, and ask questions answered strictly from the book's verified text.
             </p>
           </div>
 

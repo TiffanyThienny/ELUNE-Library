@@ -1,11 +1,11 @@
 import { Book, Category, Role, User } from '../types';
 
 export const FALLBACK_CATEGORIES: Category[] = [
-  { id: 'cat-philosophy', name: 'Philosophy', description: 'Ancient and modern philosophical inquiries into ethics and mind.', _count: { books: 1 } },
-  { id: 'cat-psychology', name: 'Psychology', description: 'Cognitive science, mindfulness, and mental sanctuaries.', _count: { books: 1 } },
-  { id: 'cat-self-dev', name: 'Self Development', description: 'Actionable frameworks for calm, deep work, and discipline.', _count: { books: 0 } },
-  { id: 'cat-technology', name: 'Technology', description: 'AI, computing, and the ethics of digital innovation.', _count: { books: 0 } },
-  { id: 'cat-literature', name: 'Literature', description: 'Classic and contemporary literary explorations.', _count: { books: 0 } }
+  { id: 'cat-philosophy', name: 'Philosophy', slug: 'philosophy', description: 'Ancient and modern philosophical inquiries into ethics and mind.', _count: { books: 1 } },
+  { id: 'cat-psychology', name: 'Psychology', slug: 'psychology', description: 'Cognitive science, mindfulness, and mental sanctuaries.', _count: { books: 1 } },
+  { id: 'cat-self-dev', name: 'Self Development', slug: 'self-development', description: 'Actionable frameworks for calm, deep work, and discipline.', _count: { books: 0 } },
+  { id: 'cat-technology', name: 'Technology', slug: 'technology', description: 'AI, computing, and the ethics of digital innovation.', _count: { books: 0 } },
+  { id: 'cat-literature', name: 'Literature', slug: 'literature', description: 'Classic and contemporary literary explorations.', _count: { books: 0 } }
 ];
 
 export const FALLBACK_BOOKS: Book[] = [
@@ -18,7 +18,7 @@ export const FALLBACK_BOOKS: Book[] = [
     description: 'Personal notes on Stoic philosophy, self-mastery, emotional resilience, and ethical living in an unpredictable world.',
     coverUrl: null,
     totalPages: 120,
-    language: 'en',
+    language: 'English',
     fileType: 'CANONICAL',
     visibility: 'PUBLIC',
     status: 'APPROVED',
@@ -121,7 +121,7 @@ export const FALLBACK_BOOKS: Book[] = [
     description: 'An architectural exploration of quiet spaces, auditory sanctuaries, and how intentional stillness restores creative mental bandwidth in our noisy world.',
     coverUrl: null,
     totalPages: 140,
-    language: 'en',
+    language: 'English',
     fileType: 'CANONICAL',
     visibility: 'PUBLIC',
     status: 'APPROVED',
@@ -313,8 +313,12 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     const search = query.get('search')?.toLowerCase().trim();
     const categoryId = query.get('categoryId')?.trim() || query.get('category')?.trim();
 
+    // Combine fallback books with any approved user uploads
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const allBooks = [...FALLBACK_BOOKS, ...userUploads];
+
     // STRICT: Only PUBLIC and APPROVED
-    let books = FALLBACK_BOOKS.filter(
+    let books = allBooks.filter(
       (b) => b.visibility === 'PUBLIC' && b.status === 'APPROVED'
     );
 
@@ -352,11 +356,89 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
-  // 6. Book Detail by ID
+  // 6. User Uploaded Books
+  if (path === '/api/books/my/uploads' && method === 'GET') {
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    return {
+      success: true,
+      data: { books: userUploads },
+      message: 'User uploads retrieved'
+    } as T;
+  }
+
+  // 7. Upload Book
+  if (path === '/api/books/upload' && method === 'POST') {
+    let title = 'New Literature Volume';
+    let author = 'You';
+    let description = 'Uploaded by reader';
+    let visibility = 'PRIVATE';
+    let categoryId = 'cat-philosophy';
+
+    if (options.body instanceof FormData) {
+      title = String(options.body.get('title') || title);
+      author = String(options.body.get('author') || author);
+      description = String(options.body.get('description') || description);
+      visibility = String(options.body.get('visibility') || visibility);
+      categoryId = String(options.body.get('categoryId') || categoryId);
+    }
+
+    const matchedCat = FALLBACK_CATEGORIES.find((c) => c.id === categoryId) || FALLBACK_CATEGORIES[0];
+
+    const newBook: Book = {
+      id: `uploaded-${Date.now()}`,
+      title,
+      author,
+      description,
+      categoryId,
+      category: matchedCat,
+      totalPages: 100,
+      language: 'English',
+      fileType: 'CANONICAL',
+      visibility: visibility as any,
+      status: visibility === 'PUBLIC' ? 'PENDING' : 'APPROVED',
+      uploadedBy: 'usr_current',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      chapters: [
+        {
+          id: `ch-up-${Date.now()}-1`,
+          bookId: `uploaded-${Date.now()}`,
+          chapterNumber: 1,
+          title: 'Chapter 1: Opening Passages',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          contentBlocks: [
+            {
+              id: `cb-up-${Date.now()}-1`,
+              chapterId: `ch-up-${Date.now()}-1`,
+              blockIndex: 1,
+              type: 'PARAGRAPH',
+              pageNumber: 1,
+              text: 'Welcome to your newly uploaded reading volume. This canonical paragraph is anchored and ready for notes, bookmarks, and scholar AI contemplation.',
+              createdAt: new Date().toISOString()
+            }
+          ]
+        }
+      ]
+    };
+
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    userUploads.unshift(newBook);
+    localStorage.setItem('elune_user_uploads', JSON.stringify(userUploads));
+
+    return {
+      success: true,
+      data: { book: newBook },
+      message: 'Book uploaded successfully'
+    } as T;
+  }
+
+  // 8. Book Detail by ID
   const bookMatch = path.match(/^\/api\/books\/([^\/]+)$/);
   if (bookMatch && method === 'GET') {
     const id = bookMatch[1];
-    const book = FALLBACK_BOOKS.find((b) => b.id === id);
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === id);
     if (!book) {
       throw new Error(`Book not found with ID ${id}`);
     }
@@ -367,11 +449,12 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
-  // 7. Reader Data
+  // 9. Reader Data
   const readerMatch = path.match(/^\/api\/reader\/([^\/]+)$/);
   if (readerMatch && method === 'GET') {
     const id = readerMatch[1];
-    const book = FALLBACK_BOOKS.find((b) => b.id === id);
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const book = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === id);
     if (!book) {
       throw new Error('Book not found');
     }
@@ -389,7 +472,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
         readingProgress: {
           currentPage: 1,
           currentChapterId: book.chapters?.[0]?.id || null,
-          progressPercentage: 15
+          progressPercentage: 20
         },
         bookmarks: bookBookmarks,
         notes: bookNotes,
@@ -399,10 +482,12 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
-  // 8. Personal Library
+  // 10. Personal Library
   if (path === '/api/library' && method === 'GET') {
-    const savedLibraryIds = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
-    const libraryBooks = FALLBACK_BOOKS.filter((b) => savedLibraryIds.includes(b.id));
+    const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const allAvailable = [...FALLBACK_BOOKS, ...userUploads];
+    const libraryBooks = allAvailable.filter((b) => savedLibraryIds.includes(b.id));
     return {
       success: true,
       data: { library: libraryBooks },
@@ -412,7 +497,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
 
   if (path.startsWith('/api/library/') && method === 'POST') {
     const bookId = path.replace('/api/library/', '');
-    const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '[]');
+    const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
     if (!savedLibraryIds.includes(bookId)) {
       savedLibraryIds.push(bookId);
       localStorage.setItem('elune_library', JSON.stringify(savedLibraryIds));
@@ -422,21 +507,45 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
 
   if (path.startsWith('/api/library/') && method === 'DELETE') {
     const bookId = path.replace('/api/library/', '');
-    const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '[]');
+    const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
     const updated = savedLibraryIds.filter((id) => id !== bookId);
     localStorage.setItem('elune_library', JSON.stringify(updated));
     return { success: true, message: 'Removed from library' } as T;
   }
 
-  // 9. Bookmarks
+  // 11. Bookmarks
   if (path === '/api/bookmarks' && method === 'GET') {
-    const savedBookmarks = JSON.parse(localStorage.getItem('elune_bookmarks') || '[]');
+    const savedBookmarks: any[] = JSON.parse(
+      localStorage.getItem('elune_bookmarks') ||
+        JSON.stringify([
+          {
+            id: 'bm_default_1',
+            bookId: 'meditations-aurelius',
+            chapterId: 'ch-med-1',
+            contentBlockId: 'cb-med-1-3',
+            pageNumber: 1,
+            note: 'Crucial morning perspective for peaceful interactions.',
+            createdAt: '2026-01-01T08:00:00.000Z',
+            book: { id: 'meditations-aurelius', title: 'Meditations' },
+            chapter: { id: 'ch-med-1', title: 'Debts and Lessons from My Elders', chapterNumber: 1 },
+            contentBlock: {
+              id: 'cb-med-1-3',
+              text: 'When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly.'
+            }
+          }
+        ])
+    );
     return { success: true, data: { bookmarks: savedBookmarks } } as T;
   }
 
   if (path.match(/\/api\/books\/[^\/]+\/bookmarks/) && method === 'POST') {
     const body = options.body ? JSON.parse(options.body as string) : {};
     const bookId = path.split('/')[3];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const targetBook = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bookId);
+    const targetChapter = targetBook?.chapters?.find((c) => c.id === body.chapterId);
+    const targetBlock = targetChapter?.contentBlocks?.find((cb) => cb.id === body.contentBlockId);
+
     const savedBookmarks: any[] = JSON.parse(localStorage.getItem('elune_bookmarks') || '[]');
     const newBm = {
       id: `bm_${Date.now()}`,
@@ -445,22 +554,65 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       contentBlockId: body.contentBlockId,
       pageNumber: body.pageNumber || 1,
       note: body.note || null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      book: { id: targetBook?.id || bookId, title: targetBook?.title || 'Book' },
+      chapter: {
+        id: targetChapter?.id || body.chapterId,
+        title: targetChapter?.title || 'Chapter',
+        chapterNumber: targetChapter?.chapterNumber || 1
+      },
+      contentBlock: {
+        id: targetBlock?.id || body.contentBlockId,
+        text: targetBlock?.text || 'Passage coordinate'
+      }
     };
-    savedBookmarks.push(newBm);
+    savedBookmarks.unshift(newBm);
     localStorage.setItem('elune_bookmarks', JSON.stringify(savedBookmarks));
     return { success: true, data: { bookmark: newBm } } as T;
   }
 
-  // 10. Notes
+  if (path.startsWith('/api/bookmarks/') && method === 'DELETE') {
+    const bmId = path.replace('/api/bookmarks/', '');
+    const savedBookmarks: any[] = JSON.parse(localStorage.getItem('elune_bookmarks') || '[]');
+    const updated = savedBookmarks.filter((b) => b.id !== bmId);
+    localStorage.setItem('elune_bookmarks', JSON.stringify(updated));
+    return { success: true, message: 'Bookmark removed' } as T;
+  }
+
+  // 12. Notes
   if (path === '/api/notes' && method === 'GET') {
-    const savedNotes = JSON.parse(localStorage.getItem('elune_notes') || '[]');
+    const savedNotes: any[] = JSON.parse(
+      localStorage.getItem('elune_notes') ||
+        JSON.stringify([
+          {
+            id: 'note_default_1',
+            bookId: 'meditations-aurelius',
+            chapterId: 'ch-med-1',
+            contentBlockId: 'cb-med-1-3',
+            pageNumber: 1,
+            content: 'Read this paragraph every morning before opening email or messages.',
+            createdAt: '2026-01-01T08:30:00.000Z',
+            updatedAt: '2026-01-01T08:30:00.000Z',
+            book: { id: 'meditations-aurelius', title: 'Meditations' },
+            chapter: { id: 'ch-med-1', title: 'Debts and Lessons from My Elders', chapterNumber: 1 },
+            contentBlock: {
+              id: 'cb-med-1-3',
+              text: 'When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly.'
+            }
+          }
+        ])
+    );
     return { success: true, data: { notes: savedNotes } } as T;
   }
 
   if (path.match(/\/api\/books\/[^\/]+\/notes/) && method === 'POST') {
     const body = options.body ? JSON.parse(options.body as string) : {};
     const bookId = path.split('/')[3];
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const targetBook = [...FALLBACK_BOOKS, ...userUploads].find((b) => b.id === bookId);
+    const targetChapter = targetBook?.chapters?.find((c) => c.id === body.chapterId);
+    const targetBlock = targetChapter?.contentBlocks?.find((cb) => cb.id === body.contentBlockId);
+
     const savedNotes: any[] = JSON.parse(localStorage.getItem('elune_notes') || '[]');
     const newNote = {
       id: `note_${Date.now()}`,
@@ -470,28 +622,73 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       pageNumber: body.pageNumber || 1,
       content: body.content,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      book: { id: targetBook?.id || bookId, title: targetBook?.title || 'Book' },
+      chapter: {
+        id: targetChapter?.id || body.chapterId,
+        title: targetChapter?.title || 'Chapter',
+        chapterNumber: targetChapter?.chapterNumber || 1
+      },
+      contentBlock: {
+        id: targetBlock?.id || body.contentBlockId,
+        text: targetBlock?.text || 'Passage coordinate'
+      }
     };
-    savedNotes.push(newNote);
+    savedNotes.unshift(newNote);
     localStorage.setItem('elune_notes', JSON.stringify(savedNotes));
     return { success: true, data: { note: newNote } } as T;
   }
 
-  // 11. User Dashboard
+  if (path.startsWith('/api/notes/') && method === 'DELETE') {
+    const noteId = path.replace('/api/notes/', '');
+    const savedNotes: any[] = JSON.parse(localStorage.getItem('elune_notes') || '[]');
+    const updated = savedNotes.filter((n) => n.id !== noteId);
+    localStorage.setItem('elune_notes', JSON.stringify(updated));
+    return { success: true, message: 'Note removed' } as T;
+  }
+
+  // 13. User Dashboard
   if (path === '/api/user/dashboard' && method === 'GET') {
+    const savedLibraryIds: string[] = JSON.parse(localStorage.getItem('elune_library') || '["meditations-aurelius"]');
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    const allAvailable = [...FALLBACK_BOOKS, ...userUploads];
+    const myLibrary = allAvailable.filter((b) => savedLibraryIds.includes(b.id));
+
+    const savedBookmarks = JSON.parse(localStorage.getItem('elune_bookmarks') || '[]');
+    const savedNotes = JSON.parse(localStorage.getItem('elune_notes') || '[]');
+
     return {
       success: true,
       data: {
-        booksRead: 1,
-        savedToLibrary: 2,
-        notesCount: 3,
-        quizzesTaken: 1,
-        activeReading: FALLBACK_BOOKS[0]
+        stats: {
+          booksRead: 1,
+          booksSaved: myLibrary.length,
+          summaries: 2,
+          bookmarks: savedBookmarks.length || 1,
+          notes: savedNotes.length || 1
+        },
+        continueReading: [
+          {
+            bookId: FALLBACK_BOOKS[0].id,
+            title: FALLBACK_BOOKS[0].title,
+            author: FALLBACK_BOOKS[0].author,
+            coverUrl: FALLBACK_BOOKS[0].coverUrl,
+            chapterId: FALLBACK_BOOKS[0].chapters?.[0]?.id || null,
+            chapterTitle: FALLBACK_BOOKS[0].chapters?.[0]?.title || 'Debts and Lessons from My Elders',
+            contentBlockId: FALLBACK_BOOKS[0].chapters?.[0]?.contentBlocks?.[0]?.id || null,
+            currentPage: 1,
+            progressPercentage: 25,
+            lastReadAt: new Date().toISOString()
+          }
+        ],
+        myLibrary,
+        recentBookmarks: savedBookmarks.slice(0, 3),
+        recentNotes: savedNotes.slice(0, 3)
       }
     } as T;
   }
 
-  // 12. Admin Stats
+  // 14. Admin Statistics & Management
   if (path === '/api/admin/statistics' && method === 'GET') {
     return {
       success: true,
@@ -501,8 +698,11 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
           totalBooks: 4,
           publicBooks: 2,
           privateBooks: 1,
-          pendingReviews: 1,
-          activeReaders: 2
+          pendingUploads: 1,
+          approvedBooks: 2,
+          rejectedBooks: 1,
+          totalAIRequests: 18,
+          activeReaders: 3
         }
       }
     } as T;
@@ -513,6 +713,16 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       success: true,
       data: {
         users: Object.values(FALLBACK_USERS).map((u) => u.user)
+      }
+    } as T;
+  }
+
+  if (path === '/api/admin/books' && method === 'GET') {
+    const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+    return {
+      success: true,
+      data: {
+        books: [...FALLBACK_BOOKS, ...userUploads]
       }
     } as T;
   }
@@ -537,7 +747,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     } as T;
   }
 
-  // 13. AI Features
+  // 15. AI Features (Summary, Scholar Chat, Flashcards, Mind Map)
   if (path.startsWith('/api/ai/summarize/book/') && method === 'POST') {
     return {
       success: true,
@@ -572,8 +782,9 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       success: true,
       data: {
         chat: {
-          role: 'model',
-          message: `Scholar Companion: In response to "${question}" — The text teaches that peace is not found in favorable external circumstances, but within the inner citadel. When you control your interpretations and judgments, no external chaos can disturb your tranquility.`
+          id: `chat_${Date.now()}`,
+          question,
+          answer: `Scholar Companion: In response to "${question}" — The text teaches that peace is not found in favorable external circumstances, but within the inner citadel. When you control your interpretations and judgments, no external chaos can disturb your tranquility.`
         }
       },
       message: 'AI response generated'
@@ -600,39 +811,6 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
         ]
       },
       message: 'Flashcards generated'
-    } as T;
-  }
-
-  if (path.startsWith('/api/ai/quiz/') && method === 'POST') {
-    return {
-      success: true,
-      data: {
-        quizzes: [
-          {
-            question: 'According to Stoic principles, what truly causes emotional distress?',
-            options: [
-              'External circumstances and events',
-              'Our judgments and perceptions about events',
-              'Other people actions',
-              'Physical exhaustion'
-            ],
-            correctAnswer: 'Our judgments and perceptions about events',
-            explanation: 'Events themselves are neutral; only our opinion about them produces distress or anger.'
-          },
-          {
-            question: 'What is the morning reminder suggested by Marcus Aurelius?',
-            options: [
-              'To avoid all social interactions',
-              'That people we meet will be difficult, but share the same divine reason',
-              'To seek immediate praise and accolades',
-              'To amass material wealth before noon'
-            ],
-            correctAnswer: 'That people we meet will be difficult, but share the same divine reason',
-            explanation: 'Remembering our shared human nature enables cooperation instead of conflict.'
-          }
-        ]
-      },
-      message: 'Quiz generated'
     } as T;
   }
 

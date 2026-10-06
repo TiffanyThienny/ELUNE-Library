@@ -10,7 +10,6 @@ import { NotePanel } from '../components/NotePanel';
 import { SummaryPanel } from '../components/SummaryPanel';
 import { AIChat } from '../components/AIChat';
 import { FlashcardCard } from '../components/FlashcardCard';
-import { QuizCard } from '../components/QuizCard';
 import { MindMapModal } from '../components/MindMapModal';
 import { ProgressBar } from '../components/ProgressBar';
 import {
@@ -19,7 +18,6 @@ import {
   Bookmark,
   FileText,
   Sparkles,
-  HelpCircle,
   BrainCircuit,
   Network,
   Headphones,
@@ -27,7 +25,7 @@ import {
   ArrowLeft,
   CheckCircle2,
 } from 'lucide-react';
-import { Flashcard, Quiz, MindMapNode } from '../types';
+import { Flashcard, MindMapNode } from '../types';
 
 export const ReaderPage: React.FC = () => {
   const { bookId } = useParams<{ bookId: string }>();
@@ -49,15 +47,12 @@ export const ReaderPage: React.FC = () => {
     getNote,
   } = useReader();
 
-  const [activeTab, setActiveTab] = useState<'notes' | 'summary' | 'chat' | 'flashcards' | 'quiz'>('chat');
+  const [activeTab, setActiveTab] = useState<'notes' | 'summary' | 'chat' | 'flashcards'>('chat');
   const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl'>('normal');
 
   // AI interactive states
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
-
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-  const [quizLoading, setQuizLoading] = useState(false);
 
   const [mindmap, setMindmap] = useState<MindMapNode | null>(null);
   const [mindmapOpen, setMindmapOpen] = useState(false);
@@ -99,22 +94,6 @@ export const ReaderPage: React.FC = () => {
       console.error('Failed to load flashcards', e);
     } finally {
       setFlashcardsLoading(false);
-    }
-  };
-
-  // AI Quiz Fetcher
-  const handleLoadQuiz = async () => {
-    if (!book) return;
-    setQuizLoading(true);
-    try {
-      const res = await aiService.getQuiz(book.id);
-      if (res.success && res.data?.quizzes) {
-        setQuizzes(res.data.quizzes);
-      }
-    } catch (e) {
-      console.error('Failed to load quiz', e);
-    } finally {
-      setQuizLoading(false);
     }
   };
 
@@ -383,22 +362,6 @@ export const ReaderPage: React.FC = () => {
               </button>
 
               <button
-                onClick={() => {
-                  setActiveTab('quiz');
-                  if (quizzes.length === 0) handleLoadQuiz();
-                }}
-                title="Knowledge Quiz"
-                className={`py-2 rounded-xl text-xs font-semibold transition-all flex flex-col items-center justify-center gap-0.5 ${
-                  activeTab === 'quiz'
-                    ? 'bg-[#2C2421] text-white shadow-2xs'
-                    : 'text-[#8C7355] hover:text-[#2C2421]'
-                }`}
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span className="text-[10px]">Quiz</span>
-              </button>
-
-              <button
                 onClick={() => setActiveTab('notes')}
                 title="Paragraph Annotations"
                 className={`py-2 rounded-xl text-xs font-semibold transition-all flex flex-col items-center justify-center gap-0.5 ${
@@ -457,44 +420,6 @@ export const ReaderPage: React.FC = () => {
                         className="mt-3 px-4 py-2 bg-[#2C2421] text-white text-xs font-semibold rounded-xl"
                       >
                         Generate Flashcards
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'quiz' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-[#F2ECE1]">
-                    <span className="text-xs font-bold text-[#8C7355] uppercase tracking-wider">
-                      Reading Comprehension Quiz
-                    </span>
-                    <button
-                      onClick={handleLoadQuiz}
-                      disabled={quizLoading}
-                      className="text-xs font-semibold text-[#2C2421] hover:text-[#8C7355]"
-                    >
-                      {quizLoading ? 'Generating...' : 'Refresh'}
-                    </button>
-                  </div>
-
-                  {quizLoading ? (
-                    <LoadingState message="Formulating comprehension challenges..." />
-                  ) : quizzes.length > 0 ? (
-                    <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                      {quizzes.map((q, i) => (
-                        <QuizCard key={q.id || i} quiz={q} index={i} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center bg-[#FAF7F2] rounded-2xl border border-[#E8DFD3]">
-                      <HelpCircle className="w-6 h-6 text-[#8C7355] mx-auto mb-2 opacity-70" />
-                      <p className="text-xs font-bold text-[#2C2421]">No quizzes generated</p>
-                      <button
-                        onClick={handleLoadQuiz}
-                        className="mt-3 px-4 py-2 bg-[#2C2421] text-white text-xs font-semibold rounded-xl"
-                      >
-                        Generate Quiz Questions
                       </button>
                     </div>
                   )}
