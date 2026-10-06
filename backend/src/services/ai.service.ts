@@ -99,6 +99,9 @@ export class AIService {
       })
       .join('\n\n');
 
+    console.log(`[AI REQUEST] Summarization requested for book "${book.title}" [ID: ${bookId}]`);
+    console.log(`[CONTENT RETRIEVED] Retrieved ${book.chapters.length} chapters, aggregated text length: ${aggregatedContent.length} characters`);
+
     if (!aggregatedContent || aggregatedContent.trim().length === 0 || aggregatedContent.includes('could not be converted into readable text')) {
       throw new Error('This book does not contain readable text, so AI summarization is unavailable.');
     }
@@ -107,6 +110,7 @@ export class AIService {
 
     if (this.isGeminiConfigured() && this.genAI) {
       try {
+        console.log(`[CHUNKING] Preparing structured context for model ${this.modelName}...`);
         const model = this.genAI.getGenerativeModel({ model: this.modelName });
         const prompt = `You are the AI literary companion for the reading app Elunè.
 Summarize the following book content thoroughly and return ONLY valid JSON matching this exact structure:
@@ -124,10 +128,12 @@ Author: "${book.author}"
 Content:
 ${aggregatedContent}`;
 
+        console.log(`[GEMINI REQUEST] Dispatching prompt to Gemini API...`);
         const result = await model.generateContent(prompt);
         const text = result.response.text();
         const jsonStr = this.cleanJsonResponse(text);
         summaryResult = JSON.parse(jsonStr);
+        console.log(`[AI RESPONSE] Gemini returned structured summary successfully.`);
       } catch (err) {
         console.warn('Gemini call failed, utilizing intelligent content fallback:', err);
         summaryResult = this.createFallbackBookSummary(book);

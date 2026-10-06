@@ -51,12 +51,12 @@ export const SummaryPanel: React.FC = () => {
     }
   };
 
-  const isScannedOrEmpty =
+  const isScannedOrEmpty = Boolean(
     book?.isScanned ||
+    book?.processingStatus === 'FAILED' ||
     !currentChapter?.contentBlocks ||
-    currentChapter.contentBlocks.length === 0 ||
-    (currentChapter.contentBlocks.length === 1 &&
-      currentChapter.contentBlocks[0].text.includes('was uploaded successfully. (Total scanned/detected pages:'));
+    currentChapter.contentBlocks.length === 0
+  );
 
   if (isScannedOrEmpty) {
     return (

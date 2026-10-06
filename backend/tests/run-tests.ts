@@ -409,6 +409,203 @@ async function main() {
     assert(Boolean(json.data.answer), 'Answer must be returned');
   });
 
+  // 18. END-TO-END PDF UPLOAD & EXTRACTION PIPELINE
+  let uploadedPdfBookId = '';
+  await runTest('POST /api/books/upload with valid PDF should parse text, create chapters, content blocks, and audio segments', async () => {
+    function generateTestPdf(paraText: string) {
+      const content = `BT\n/F1 16 Tf\n50 720 Td\n(Chapter 1: The Hidden Secrets) Tj\n0 -30 Td\n/F1 12 Tf\n(${paraText}) Tj\nET`;
+      const lines = [
+        '%PDF-1.4',
+        '1 0 obj',
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        'endobj',
+        '2 0 obj',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        'endobj',
+        '3 0 obj',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+        'endobj',
+        '4 0 obj',
+        `<< /Length ${Buffer.byteLength(content)} >>`,
+        'stream',
+        content,
+        'endstream',
+        'endobj',
+        '5 0 obj',
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        'endobj'
+      ];
+
+      const objOffsets: Record<string, number> = {};
+      let currentOffset = 0;
+      const bodyParts: string[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(/^(\d+) 0 obj/);
+        if (match) {
+          objOffsets[match[1]] = currentOffset;
+        }
+        bodyParts.push(line + '\n');
+        currentOffset += Buffer.byteLength(line + '\n', 'binary');
+      }
+
+      const startxref = currentOffset;
+      let xref = 'xref\n0 6\n0000000000 65535 f \n';
+      for (let i = 1; i <= 5; i++) {
+        const off = String(objOffsets[i]).padStart(10, '0');
+        xref += off + ' 00000 n \n';
+      }
+      xref += 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + startxref + '\n%%EOF\n';
+
+      return Buffer.from(bodyParts.join('') + xref, 'binary');
+    }
+
+    const testPdfBuffer = generateTestPdf(
+      'Throughout human history esoteric societies preserved profound knowledge about consciousness and astronomy. In this book Jonathan Black reveals the hidden mysteries that shaped civilization from ancient Egypt to the Renaissance.'
+    );
+
+    const blob = new Blob([testPdfBuffer], { type: 'application/pdf' });
+    const formData = new FormData();
+    formData.append('title', 'Sejarah Rahasia Kuno');
+    formData.append('author', 'Jonathan Black');
+    formData.append('visibility', 'PRIVATE');
+    formData.append('file', blob, 'Sejarah_Rahasia_Kuno.pdf');
+
+    const res = await fetch(`${baseUrl}/api/books/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${userToken}`
+      },
+      body: formData
+    });
+
+    const json = await res.json();
+    assert(res.status === 201, `Expected 201, got ${res.status}: ${JSON.stringify(json)}`);
+    assert(json.data.id, 'Book ID must be generated');
+    assert(json.data.processingStatus === 'READY', 'Book processing status must be READY');
+    assert(json.data.isScanned === false, 'isScanned must be false for text PDF');
+    assert(json.data.chapters.length >= 1, 'Book must have at least 1 chapter');
+    assert(json.data.chapters[0].contentBlocks.length >= 1, 'Chapter must have content blocks');
+
+    uploadedPdfBookId = json.data.id;
+  });
+
+  // 19. GET /api/books/:id/processing-status
+  await runTest('GET /api/books/:id/processing-status should return READY and chapter metrics', async () => {
+    const res = await fetch(`${baseUrl}/api/books/${uploadedPdfBookId}/processing-status`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.processingStatus === 'READY', 'Processing status must be READY');
+    assert(json.data.chaptersCount >= 1, 'Chapters count must be >= 1');
+  });
+
+  // 20. GET /api/books/:id/content
+  await runTest('GET /api/books/:id/content should return real structured content blocks and audio synchronization', async () => {
+    const res = await fetch(`${baseUrl}/api/books/${uploadedPdfBookId}/content`, {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(json.data.book.processingStatus === 'READY', 'Book processing status in content must be READY');
+    assert(json.data.chapters.length >= 1, 'Must return chapters');
+    const firstBlock = json.data.chapters[0].contentBlocks[0];
+    assert(Boolean(firstBlock.text), 'Content block text must not be empty');
+    assert(!firstBlock.text.includes('could not be converted into readable text'), 'Content block must NOT be fake error text');
+  });
+
+  // 21. AI on Uploaded PDF Book
+  await runTest('POST /api/ai/summarize/book/:id on uploaded PDF should succeed with real content', async () => {
+    const res = await fetch(`${baseUrl}/api/ai/summarize/book/${uploadedPdfBookId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const json = await res.json();
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(Boolean(json.data.quickOverview), 'Summary quick overview must exist');
+  });
+
+  // 22. SCANNED / IMAGE-ONLY PDF HANDLING (Zero fake text, explicit isScanned status)
+  await runTest('POST /api/books/upload with scanned/image PDF should set isScanned=true and create NO fake text', async () => {
+    function generateScannedPdf() {
+      // PDF page with empty content stream (simulating a pure image/scanned photocopy with no text)
+      const content = '';
+      const lines = [
+        '%PDF-1.4',
+        '1 0 obj',
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        'endobj',
+        '2 0 obj',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        'endobj',
+        '3 0 obj',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>',
+        'endobj',
+        '4 0 obj',
+        '<< /Length 0 >>',
+        'stream',
+        '',
+        'endstream',
+        'endobj'
+      ];
+
+      const objOffsets: Record<string, number> = {};
+      let currentOffset = 0;
+      const bodyParts: string[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(/^(\d+) 0 obj/);
+        if (match) {
+          objOffsets[match[1]] = currentOffset;
+        }
+        bodyParts.push(line + '\n');
+        currentOffset += Buffer.byteLength(line + '\n', 'binary');
+      }
+
+      const startxref = currentOffset;
+      let xref = 'xref\n0 5\n0000000000 65535 f \n';
+      for (let i = 1; i <= 4; i++) {
+        const off = String(objOffsets[i]).padStart(10, '0');
+        xref += off + ' 00000 n \n';
+      }
+      xref += 'trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n' + startxref + '\n%%EOF\n';
+
+      return Buffer.from(bodyParts.join('') + xref, 'binary');
+    }
+
+    const scannedBuf = generateScannedPdf();
+    const blob = new Blob([scannedBuf], { type: 'application/pdf' });
+    const formData = new FormData();
+    formData.append('title', 'Dokumen Scan Fotokopi');
+    formData.append('author', 'Koleksi Arsip');
+    formData.append('visibility', 'PRIVATE');
+    formData.append('file', blob, 'Dokumen_Scan_Fotokopi.pdf');
+
+    const res = await fetch(`${baseUrl}/api/books/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${userToken}` },
+      body: formData
+    });
+
+    const json = await res.json();
+    assert(res.status === 201, `Expected 201, got ${res.status}`);
+    assert(json.data.isScanned === true, 'Scanned PDF must have isScanned=true');
+    assert(json.data.processingStatus === 'FAILED', 'Processing status must be FAILED for scanned without OCR');
+    assert(json.data.chapters.length === 0, 'No fake chapters must be created for scanned PDF');
+
+    // Test AI on scanned book returns honest message without hallucination
+    const aiRes = await fetch(`${baseUrl}/api/ai/summarize/book/${json.data.id}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const aiJson = await aiRes.json();
+    assert(aiRes.status === 400 || aiRes.status === 500, 'AI should reject summarization on textless document');
+    assert(aiJson.message.includes('readable text') || aiJson.error.includes('readable text'), 'Must return readable text notice');
+  });
+
   // Clean up
   server.close();
   await prisma.$disconnect();

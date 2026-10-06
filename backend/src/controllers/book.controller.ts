@@ -6,7 +6,7 @@ import { ENV } from '../config/env';
 import { storageService } from '../services/storage.service';
 import { documentService } from '../services/document.service';
 import { sendSuccess, sendError } from '../utils/response.util';
-import { Visibility, BookStatus, BlockType } from '@prisma/client';
+import { Visibility, BookStatus, BlockType, ProcessingStatus } from '@prisma/client';
 import { canUserAccessBook, resolveBookUploadStatus } from '../utils/permission.util';
 
 export const formatBookForResponse = (book: any, progress?: any) => {
@@ -53,6 +53,9 @@ export const formatBookForResponse = (book: any, progress?: any) => {
     visibility: book.visibility,
     status: book.status,
     rejectionReason: book.rejectionReason,
+    processingStatus: book.processingStatus || 'READY',
+    processingError: book.processingError || null,
+    isScanned: Boolean(book.isScanned),
     isUploaded: Boolean(book.uploadedBy),
     uploadedBy: book.uploadedBy,
     uploaderName: book.uploader ? book.uploader.name : undefined,
@@ -371,6 +374,12 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
     // STRICT MASTER RESOLUTION
     const { visibility, status } = resolveBookUploadStatus(req.user, requestedVisibility);
 
+    const isScanned = Boolean(extracted.isScannedOrEmpty);
+    const processingStatus = isScanned ? ProcessingStatus.FAILED : ProcessingStatus.READY;
+    const processingError = isScanned
+      ? 'This PDF contains scanned pages and does not have selectable text.'
+      : null;
+
     // Save Book along with structured Chapters and ContentBlocks
     const book = await prisma.book.create({
       data: {
@@ -388,22 +397,27 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         visibility,
         status,
         rejectionReason: null,
-        chapters: {
-          create: extracted.chapters.map((ch) => ({
-            chapterNumber: ch.chapterNumber,
-            title: ch.title,
-            contentBlocks: {
-              create: ch.contentBlocks.map((block) => ({
-                blockIndex: block.blockIndex,
-                type: BlockType.PARAGRAPH,
-                text: block.text,
-                pageNumber: block.pageNumber,
-                startOffset: block.startOffset || 0,
-                endOffset: block.endOffset || block.text.length,
+        processingStatus,
+        processingError,
+        isScanned,
+        chapters: isScanned
+          ? undefined
+          : {
+              create: extracted.chapters.map((ch) => ({
+                chapterNumber: ch.chapterNumber,
+                title: ch.title,
+                contentBlocks: {
+                  create: ch.contentBlocks.map((block) => ({
+                    blockIndex: block.blockIndex,
+                    type: BlockType.PARAGRAPH,
+                    text: block.text,
+                    pageNumber: block.pageNumber,
+                    startOffset: block.startOffset || 0,
+                    endOffset: block.endOffset || block.text.length,
+                  })),
+                },
               })),
             },
-          })),
-        },
       },
       include: {
         category: true,
@@ -417,42 +431,46 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       },
     });
 
-    // Create synchronized AudioTracks and AudioSegments for the newly ingested volume
-    try {
-      for (const chapter of book.chapters) {
-        let cumulativeSeconds = 0.0;
-        const segmentData: { contentBlockId: string; startTime: number; endTime: number }[] = [];
+    // Create synchronized AudioTracks and AudioSegments only if book has valid extracted content
+    if (!isScanned && book.chapters.length > 0) {
+      try {
+        console.log(`[TTS REQUEST] Initializing synchronized audio segment records for book ${book.id}...`);
+        for (const chapter of book.chapters) {
+          let cumulativeSeconds = 0.0;
+          const segmentData: { contentBlockId: string; startTime: number; endTime: number }[] = [];
 
-        for (const block of chapter.contentBlocks) {
-          const words = block.text.split(/\s+/).length;
-          const duration = Math.max(2.0, parseFloat((words / 2.5).toFixed(1)));
-          const startTime = cumulativeSeconds;
-          const endTime = parseFloat((cumulativeSeconds + duration).toFixed(1));
-          cumulativeSeconds = endTime;
+          for (const block of chapter.contentBlocks) {
+            const words = block.text.split(/\s+/).length;
+            const duration = Math.max(2.0, parseFloat((words / 2.5).toFixed(1)));
+            const startTime = cumulativeSeconds;
+            const endTime = parseFloat((cumulativeSeconds + duration).toFixed(1));
+            cumulativeSeconds = endTime;
 
-          segmentData.push({
-            contentBlockId: block.id,
-            startTime,
-            endTime,
-          });
-        }
+            segmentData.push({
+              contentBlockId: block.id,
+              startTime,
+              endTime,
+            });
+          }
 
-        if (segmentData.length > 0) {
-          await prisma.audioTrack.create({
-            data: {
-              bookId: book.id,
-              chapterId: chapter.id,
-              audioUrl: `/audio/stream/${book.id}/${chapter.id}.mp3`,
-              duration: cumulativeSeconds,
-              segments: {
-                create: segmentData,
+          if (segmentData.length > 0) {
+            await prisma.audioTrack.create({
+              data: {
+                bookId: book.id,
+                chapterId: chapter.id,
+                audioUrl: `/audio/stream/${book.id}/${chapter.id}.mp3`,
+                duration: cumulativeSeconds,
+                segments: {
+                  create: segmentData,
+                },
               },
-            },
-          });
+            });
+          }
         }
+        console.log(`[AUDIO SEGMENTS CREATED] Audio tracks and segments synchronized with ContentBlocks.`);
+      } catch (audioInitErr) {
+        console.warn('Audio segment initialization skipped:', audioInitErr);
       }
-    } catch (audioInitErr) {
-      console.warn('Audio segment initialization skipped:', audioInitErr);
     }
 
     // Auto-add to user's library
@@ -470,8 +488,11 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       },
     });
 
-    const message =
-      visibility === 'PUBLIC'
+    console.log(`[BOOK READY] Volume "${book.title}" [ID: ${book.id}] status=${processingStatus}, isScanned=${isScanned}`);
+
+    const message = isScanned
+      ? 'Upload complete. This volume appears to be a scanned photocopy without digital text.'
+      : visibility === 'PUBLIC'
         ? 'Upload successful. Your book is published and available for all readers.'
         : 'Upload successful. Your private volume is ready in your personal sanctuary.';
 
@@ -479,6 +500,57 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
   } catch (error: any) {
     console.error('uploadBook error:', error);
     sendError(res, 'Failed to process and upload book', error.message, 500);
+  }
+};
+
+/**
+ * Get Book Processing Status
+ */
+export const getProcessingStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const book = await prisma.book.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        totalPages: true,
+        processingStatus: true,
+        processingError: true,
+        isScanned: true,
+        visibility: true,
+        status: true,
+        uploadedBy: true,
+        _count: { select: { chapters: true } },
+      },
+    });
+
+    if (!book) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied', 'FORBIDDEN', 403);
+      return;
+    }
+
+    sendSuccess(
+      res,
+      {
+        bookId: book.id,
+        title: book.title,
+        totalPages: book.totalPages,
+        processingStatus: book.processingStatus,
+        processingError: book.processingError,
+        isScanned: book.isScanned,
+        chaptersCount: book._count.chapters,
+      },
+      'Processing status retrieved'
+    );
+  } catch (error: any) {
+    console.error('getProcessingStatus error:', error);
+    sendError(res, 'Failed to fetch processing status', error.message, 500);
   }
 };
 
@@ -550,13 +622,21 @@ export const getBookContent = async (req: Request, res: Response): Promise<void>
           description: book.description,
           category: book.category ? book.category.name : 'General',
           totalPages: book.totalPages,
+          fileUrl: book.fileUrl,
+          fileType: book.fileType,
           visibility: book.visibility,
           status: book.status,
+          processingStatus: book.processingStatus,
+          processingError: book.processingError,
+          isScanned: book.isScanned,
           chapters,
         },
         chapters,
         pages: book.totalPages,
         totalBlocks,
+        processingStatus: book.processingStatus,
+        processingError: book.processingError,
+        isScanned: book.isScanned,
       },
       'Book content retrieved successfully'
     );

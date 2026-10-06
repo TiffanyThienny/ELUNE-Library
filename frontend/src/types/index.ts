@@ -51,6 +51,8 @@ export interface Book {
   updatedAt: string;
   chapters?: Chapter[];
   isScanned?: boolean;
+  processingStatus?: 'QUEUED' | 'PROCESSING' | 'READY' | 'FAILED';
+  processingError?: string | null;
   _count?: {
     bookmarks?: number;
     notes?: number;

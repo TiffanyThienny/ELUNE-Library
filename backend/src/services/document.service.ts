@@ -1,6 +1,10 @@
 import fs from 'fs';
 import pdfParse from 'pdf-parse';
 
+// Load modern pdfjs-dist legacy build for rock-solid server-side PDF extraction
+// @ts-ignore
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
 export interface ExtractedBlock {
   blockIndex: number;
   type: 'PARAGRAPH' | 'HEADING';
@@ -23,6 +27,7 @@ export interface ExtractedDocument {
   totalPages: number;
   fullText: string;
   isScannedOrEmpty: boolean;
+  totalTextChars: number;
   chapters: ExtractedChapter[];
 }
 
@@ -31,6 +36,8 @@ export class DocumentService {
    * Parse PDF file with precise per-page text extraction and canonical content blocks
    */
   async parsePdf(filePath: string, originalName: string): Promise<ExtractedDocument> {
+    console.log(`[PDF UPLOAD] Received file for processing: ${originalName}`);
+
     if (!fs.existsSync(filePath)) {
       throw new Error(`PDF file does not exist at ${filePath}`);
     }
@@ -40,91 +47,118 @@ export class DocumentService {
     // Validate PDF magic bytes (%PDF-)
     const header = dataBuffer.slice(0, 5).toString('ascii');
     if (!header.startsWith('%PDF')) {
+      console.warn(`[PDF VALIDATION FAILED] File does not have valid %PDF header: ${header}`);
       throw new Error('Unable to read this PDF file. Invalid file header or corrupted document.');
     }
+    console.log(`[PDF VALIDATION] Valid %PDF header detected. File size: ${(dataBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
     const pageTexts: { pageNumber: number; text: string }[] = [];
-    let pageCounter = 0;
+    let totalExtractedChars = 0;
+    let totalPages = 1;
 
-    // Custom pagerender to capture text page-by-page
-    const renderPage = (pageData: any) => {
-      pageCounter++;
-      const curPageNum = pageCounter;
+    console.log(`[PDF EXTRACTION START] Extracting text page-by-page from ${originalName}...`);
 
-      return pageData.getTextContent({ normalizeWhitespace: true }).then((textContent: any) => {
-        const textItems: string[] = [];
-        let lastY: number | null = null;
+    // Primary Parser: Modern pdfjs-dist
+    try {
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(dataBuffer),
+        useSystemFonts: true,
+        isEvalSupported: false,
+        disableFontFace: true,
+      });
+      const pdfDoc = await loadingTask.promise;
+      totalPages = pdfDoc.numPages || 1;
 
-        for (const item of textContent.items) {
-          if (item && item.str) {
-            const trimmed = item.str.trim();
-            if (trimmed.length > 0) {
-              if (lastY === null || Math.abs(lastY - (item.transform?.[5] || 0)) < 4) {
-                textItems.push(item.str);
-              } else {
-                textItems.push('\n' + item.str);
-              }
-              lastY = item.transform?.[5] || 0;
+      for (let pNum = 1; pNum <= totalPages; pNum++) {
+        try {
+          const page = await pdfDoc.getPage(pNum);
+          const textContent = await page.getTextContent();
+          let pageStr = '';
+          let lastY: number | null = null;
+
+          for (const item of textContent.items as any[]) {
+            if (!item.str) continue;
+            const str = item.str;
+            if (lastY !== null && Math.abs((item.transform?.[5] || 0) - lastY) > 5) {
+              pageStr += '\n';
+            } else if (pageStr.length > 0 && !pageStr.endsWith(' ') && !pageStr.endsWith('\n')) {
+              pageStr += ' ';
+            }
+            pageStr += str;
+            lastY = item.transform ? item.transform[5] : null;
+          }
+
+          const dehyphenated = pageStr.replace(/(\w+)-\n(\w+)/g, '$1$2');
+          const cleanStr = dehyphenated.replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim();
+
+          if (cleanStr.length > 0) {
+            pageTexts.push({ pageNumber: pNum, text: cleanStr });
+            totalExtractedChars += cleanStr.length;
+          }
+        } catch (pageErr) {
+          console.warn(`[PDF EXTRACTION] Warning on page ${pNum}:`, pageErr);
+        }
+      }
+    } catch (pdfjsErr: any) {
+      console.warn(`[PDF EXTRACTION] pdfjs-dist primary parser threw (${pdfjsErr.message}), trying pdf-parse fallback...`);
+      try {
+        const fallbackRes = await pdfParse(dataBuffer);
+        totalPages = fallbackRes.numpages || 1;
+        const rawText = (fallbackRes.text || '').trim();
+        if (rawText.length > 0) {
+          const approxPageSize = Math.max(1, Math.ceil(rawText.length / totalPages));
+          for (let p = 1; p <= totalPages; p++) {
+            const start = (p - 1) * approxPageSize;
+            const slice = rawText.slice(start, start + approxPageSize).trim();
+            if (slice.length > 0) {
+              pageTexts.push({ pageNumber: p, text: slice });
+              totalExtractedChars += slice.length;
             }
           }
         }
-
-        const combinedText = textItems.join(' ').replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim();
-        pageTexts.push({ pageNumber: curPageNum, text: combinedText });
-        return combinedText;
-      });
-    };
-
-    let pdfData: any;
-    try {
-      pdfData = await pdfParse(dataBuffer, { pagerender: renderPage });
-    } catch (parseErr: any) {
-      throw new Error(`Unable to read this PDF file: ${parseErr.message || 'Corrupted or password-protected PDF'}`);
+      } catch (pdfParseErr: any) {
+        console.error(`[PDF EXTRACTION ERROR] All PDF parsers failed:`, pdfParseErr);
+        throw new Error(`Unable to read this PDF file: ${pdfParseErr.message || 'Corrupted or password-protected PDF'}`);
+      }
     }
 
-    const totalPages = Math.max(pdfData.numpages || 1, pageTexts.length);
-    const fullText = (pdfData.text || pageTexts.map((p) => p.text).join('\n\n')).trim();
+    pageTexts.sort((a, b) => a.pageNumber - b.pageNumber);
     const cleanTitle = originalName.replace(/\.(pdf|epub|txt)$/i, '').replace(/[_-]/g, ' ');
+    const fullText = pageTexts.map((p) => p.text).join('\n\n').trim();
 
-    // Check if PDF is image-only or scanned
-    if (fullText.length === 0 || pageTexts.every((p) => p.text.length === 0)) {
+    console.log(`[PDF EXTRACTION COMPLETE] Total detected pages: ${totalPages}, Pages with text: ${pageTexts.length}, Total characters: ${totalExtractedChars}`);
+
+    // SCANNED / IMAGE-ONLY PDF DETECTION:
+    // If fewer than 100 characters were extracted across the entire document,
+    // or all pages had 0 text, it is genuinely a scanned / image-only PDF.
+    // STRICT RULE: DO NOT generate fake content blocks!
+    if (totalExtractedChars < 100 || pageTexts.length === 0) {
+      console.log(`[PAGES DETECTED] Scanned / Image-only PDF identified. Extracted characters: ${totalExtractedChars}. No fake text generated.`);
       return {
         title: cleanTitle,
         totalPages,
         fullText: '',
         isScannedOrEmpty: true,
-        chapters: [
-          {
-            chapterNumber: 1,
-            title: 'Unreadable Document',
-            contentBlocks: [
-              {
-                blockIndex: 1,
-                type: 'PARAGRAPH',
-                pageNumber: 1,
-                startOffset: 0,
-                endOffset: 120,
-                text: 'This PDF could not be converted into readable text. This may happen with scanned/image-only PDFs.',
-              },
-            ],
-            readingTime: '1 min',
-            summary: 'Text extraction unavailable for this PDF.',
-          },
-        ],
+        totalTextChars: totalExtractedChars,
+        chapters: [], // Strict: No fake chapters or fake paragraphs!
       };
     }
 
-    // Sort page texts by page number
-    pageTexts.sort((a, b) => a.pageNumber - b.pageNumber);
+    console.log(`[PAGES DETECTED] ${pageTexts.length} pages containing valid readable text found.`);
 
     // Group text into canonical chapters and content blocks with page mapping
     const chapters = this.buildChaptersFromPages(pageTexts, cleanTitle);
+    const totalBlocks = chapters.reduce((acc, c) => acc + c.contentBlocks.length, 0);
+
+    console.log(`[CHAPTERS DETECTED] ${chapters.length} chapters identified.`);
+    console.log(`[CONTENT BLOCKS CREATED] ${totalBlocks} canonical content blocks created.`);
 
     return {
       title: cleanTitle,
       totalPages,
       fullText,
       isScannedOrEmpty: false,
+      totalTextChars: totalExtractedChars,
       chapters,
     };
   }
@@ -154,6 +188,7 @@ export class DocumentService {
       totalPages: Math.max(1, Math.ceil(blocks.length / 3)),
       fullText: rawText,
       isScannedOrEmpty: rawText.trim().length === 0,
+      totalTextChars: rawText.length,
       chapters: [
         {
           chapterNumber: 1,
@@ -166,7 +201,7 @@ export class DocumentService {
   }
 
   /**
-   * Parse EPUB or generic document
+   * Parse EPUB document
    */
   async parseEpub(filePath: string, originalName: string): Promise<ExtractedDocument> {
     const cleanTitle = originalName.replace(/\.(pdf|epub)$/i, '').replace(/[_-]/g, ' ');
@@ -197,6 +232,7 @@ export class DocumentService {
       totalPages: Math.max(1, Math.ceil(blocks.length / 3)),
       fullText,
       isScannedOrEmpty: fullText.trim().length === 0,
+      totalTextChars: fullText.length,
       chapters: [
         {
           chapterNumber: 1,
@@ -215,7 +251,8 @@ export class DocumentService {
     pages: { pageNumber: number; text: string }[],
     defaultTitle: string
   ): ExtractedChapter[] {
-    const chapterRegex = /(?:^|\n)(?:Chapter\s+(\d+|[IVXLCDM]+)|CHAPTER\s+(\d+|[IVXLCDM]+)|Bab\s+(\d+))[:\s.-]*(.*?)(?=\n|$)/i;
+    // Comprehensive chapter detection regex (Indonesian & English, roman & arabic numerals)
+    const chapterRegex = /(?:^|\n)\s*(?:(?:BAB|Bab|CHAPTER|Chapter|Bagian|BAGIAN|Part|PART|Book|BOOK|Section|SECTION)\s+([0-9IVXLCDM]+|[A-Za-z]+)|(?:\b(?:PENDAHULUAN|PENGANTAR|PRAKATA|PROLOGUE|PROLOG|EPILOGUE|EPILOG|KESIMPULAN|KATA PENGANTAR|INTRODUCTION|PREFACE|FOREWORD)\b))[:\s.-]*(.*?)(?=\n|$)/i;
 
     const chapters: ExtractedChapter[] = [];
     let currentChapterNumber = 1;
@@ -230,13 +267,13 @@ export class DocumentService {
       // Split page text into distinct paragraphs
       const rawParas = page.text
         .split(/(?:\r?\n\s*\r?\n)|(?<=[.!?])\s{2,}/)
-        .map((p) => p.trim())
+        .map((p) => p.replace(/\s+/g, ' ').trim())
         .filter((p) => p.length > 10);
 
       for (const para of rawParas) {
         // Check if paragraph is a chapter heading
         const match = para.match(chapterRegex);
-        if (match && currentBlocks.length > 2) {
+        if (match && currentBlocks.length >= 2) {
           // Finish previous chapter
           chapters.push({
             chapterNumber: currentChapterNumber,
@@ -246,8 +283,10 @@ export class DocumentService {
           });
 
           currentChapterNumber++;
-          currentChapterTitle = match[0].trim().replace(/\n/g, ' ') || `Chapter ${currentChapterNumber}`;
+          const detectedTitle = match[0].trim().replace(/\n/g, ' ');
+          currentChapterTitle = detectedTitle || `Chapter ${currentChapterNumber}`;
           currentBlocks = [];
+          globalBlockIndex = 1;
         }
 
         const startOffset = globalOffset;
@@ -275,7 +314,8 @@ export class DocumentService {
       });
     }
 
-    // If no chapter headers were matched and there's a lot of blocks, partition into 12-page chapters
+    // Fallback: If no explicit chapter headers were found in a long document,
+    // segment into natural reading sections (e.g. 25 paragraphs per section)
     if (chapters.length === 1 && currentBlocks.length > 30) {
       const allBlocks = chapters[0].contentBlocks;
       const blocksPerChapter = 25;
@@ -284,14 +324,22 @@ export class DocumentService {
       const partitioned: ExtractedChapter[] = [];
       for (let c = 0; c < totalPartitions; c++) {
         const slice = allBlocks.slice(c * blocksPerChapter, (c + 1) * blocksPerChapter);
+        const startPage = slice[0]?.pageNumber || 1;
+        const endPage = slice[slice.length - 1]?.pageNumber || startPage;
+
         partitioned.push({
           chapterNumber: c + 1,
-          title: c === 0 ? 'Chapter 1: Opening Treatise' : `Chapter ${c + 1}: Continuing Exposition`,
-          contentBlocks: slice,
+          title: `Section ${c + 1} (Pages ${startPage}–${endPage})`,
+          contentBlocks: slice.map((b, bIdx) => ({ ...b, blockIndex: bIdx + 1 })),
           readingTime: `${Math.max(3, Math.ceil(slice.reduce((acc, b) => acc + b.text.split(/\s+/).length, 0) / 200))} mins`,
         });
       }
       return partitioned;
+    }
+
+    // If single short chapter with no heading, give it a clean natural name
+    if (chapters.length === 1) {
+      chapters[0].title = 'Chapter 1: Book Content';
     }
 
     return chapters;

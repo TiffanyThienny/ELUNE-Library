@@ -52,11 +52,11 @@ export const AIChat: React.FC = () => {
     }
   };
 
-  const isScannedOrEmpty =
+  const isScannedOrEmpty = Boolean(
     book?.isScanned ||
-    !book?.chapters?.length ||
-    (book?.chapters?.length === 1 &&
-      book?.chapters[0]?.contentBlocks?.[0]?.text?.includes('was uploaded successfully. (Total scanned/detected pages:'));
+    book?.processingStatus === 'FAILED' ||
+    !book?.chapters?.length
+  );
 
   if (isScannedOrEmpty) {
     return (

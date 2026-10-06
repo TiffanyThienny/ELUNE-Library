@@ -24,6 +24,13 @@ enum BookStatus {
   REJECTED
 }
 
+enum ProcessingStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
 enum BlockType {
   PARAGRAPH
   HEADING
@@ -77,24 +84,27 @@ model Category {
 }
 
 model Book {
-  id              String            @id @default(cuid())
-  title           String
-  author          String
-  description     String            @db.Text
-  coverUrl        String?           @db.Text
-  coverBg         String?           @default("linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)")
-  coverTextColor  String?           @default("#FAF0E6")
-  fileUrl         String?           @db.Text
-  fileType        String?           @default("EPUB")
-  totalPages      Int               @default(100)
-  language        String            @default("en")
-  categoryId      String?
-  uploadedBy      String?
-  visibility      Visibility        @default(PUBLIC)
-  status          BookStatus        @default(APPROVED)
-  rejectionReason String?           @db.Text
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id               String            @id @default(cuid())
+  title            String
+  author           String
+  description      String            @db.Text
+  coverUrl         String?           @db.Text
+  coverBg          String?           @default("linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)")
+  coverTextColor   String?           @default("#FAF0E6")
+  fileUrl          String?           @db.Text
+  fileType         String?           @default("EPUB")
+  totalPages       Int               @default(100)
+  language         String            @default("en")
+  categoryId       String?
+  uploadedBy       String?
+  visibility       Visibility        @default(PUBLIC)
+  status           BookStatus        @default(APPROVED)
+  rejectionReason  String?           @db.Text
+  processingStatus ProcessingStatus  @default(READY)
+  processingError  String?           @db.Text
+  isScanned        Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   category        Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   uploader        User?             @relation("UserUploadedBooks", fields: [uploadedBy], references: [id], onDelete: SetNull)

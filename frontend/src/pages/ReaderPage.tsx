@@ -9,6 +9,7 @@ import { NotePanel } from '../components/NotePanel';
 import { SummaryPanel } from '../components/SummaryPanel';
 import { AIChat } from '../components/AIChat';
 import { ProgressBar } from '../components/ProgressBar';
+import { PdfVisualReader } from '../components/PdfVisualReader';
 import {
   ChevronLeft,
   ChevronRight,
@@ -67,8 +68,17 @@ export const ReaderPage: React.FC = () => {
 
 
 
-  if (loading) {
-    return <LoadingState message="Opening book in comfortable reader sanctuary..." fullPage />;
+  if (loading || book?.processingStatus === 'PROCESSING') {
+    return (
+      <LoadingState
+        message={
+          book?.processingStatus === 'PROCESSING'
+            ? 'Preparing your book... Setting up your distraction-free reading sanctuary.'
+            : 'Opening book in comfortable reader sanctuary...'
+        }
+        fullPage
+      />
+    );
   }
 
   if (error || !book) {
@@ -101,12 +111,11 @@ export const ReaderPage: React.FC = () => {
 
   const isScannedDocument = Boolean(
     book?.isScanned ||
+    book?.processingStatus === 'FAILED' ||
     chapters.length === 0 ||
     !currentChapter ||
     !currentChapter.contentBlocks ||
-    currentChapter.contentBlocks.length === 0 ||
-    (currentChapter.contentBlocks.length === 1 &&
-      currentChapter.contentBlocks[0].text.includes('was uploaded successfully. (Total scanned/detected pages:'))
+    currentChapter.contentBlocks.length === 0
   );
 
   return (
@@ -193,23 +202,11 @@ export const ReaderPage: React.FC = () => {
               {/* Paragraphs / Content Blocks */}
               <div className="space-y-6">
                 {isScannedDocument ? (
-                  <div className="py-16 text-center space-y-4 bg-[#FAF7F2] rounded-3xl p-8 border border-[#E8DFD3] max-w-xl mx-auto my-6">
-                    <div className="w-14 h-14 rounded-2xl bg-amber-100/70 text-amber-800 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
-                      <FileText className="w-7 h-7 text-[#8C7355]" />
-                    </div>
-                    <h3 className="font-serif-literata text-2xl font-bold text-[#2C2421]">
-                      This PDF could not be converted into readable text.
-                    </h3>
-                    <p className="text-xs sm:text-sm text-[#665A4F] max-w-md mx-auto leading-relaxed">
-                      This may happen with scanned or image-only PDFs that do not contain an embedded digital text layer.
-                    </p>
-                    <div className="pt-4 border-t border-[#E8DFD3] text-xs text-[#8C7355] space-y-1">
-                      <p className="font-semibold text-stone-700">Text extraction unavailable for this PDF.</p>
-                      <p className="text-[#A69888]">
-                        AI Summarization, Q&A, and Audio Text-to-Speech require selectable digital text.
-                      </p>
-                    </div>
-                  </div>
+                  <PdfVisualReader
+                    bookId={book.id}
+                    fileUrl={book.fileUrl}
+                    totalPages={book.totalPages}
+                  />
                 ) : (
                   currentChapter?.contentBlocks && currentChapter.contentBlocks.length > 0 ? (
                     currentChapter.contentBlocks.map((block) => {
