@@ -115,11 +115,17 @@ export const ReaderPage: React.FC = () => {
     (!currentChapter?.contentBlocks ||
       currentChapter.contentBlocks.length === 0 ||
       (currentChapter.contentBlocks.length === 1 &&
-        (currentChapter.contentBlocks[0].text.includes('Total scanned/detected pages') ||
-          currentChapter.contentBlocks[0].text.includes('scanned/detected') ||
-          currentChapter.contentBlocks[0].text.includes('Ingested Document') ||
-          currentChapter.contentBlocks[0].text.includes('uploaded successfully') ||
-          currentChapter.contentBlocks[0].text.includes('The volume is ready for study and reflection'))))
+        (currentChapter.contentBlocks[0]?.text?.includes('Total scanned/detected pages') ||
+          currentChapter.contentBlocks[0]?.text?.includes('scanned/detected') ||
+          currentChapter.contentBlocks[0]?.text?.includes('Ingested Document') ||
+          currentChapter.contentBlocks[0]?.text?.includes('uploaded successfully') ||
+          currentChapter.contentBlocks[0]?.text?.includes('The volume is ready for study and reflection'))))
+  );
+
+  const hasValidTextBlocks = Boolean(
+    currentChapter?.contentBlocks &&
+    currentChapter.contentBlocks.length > 0 &&
+    currentChapter.contentBlocks.some((b) => (b.text || '').trim().length > 15)
   );
 
   const isScannedDocument = Boolean(
@@ -129,16 +135,18 @@ export const ReaderPage: React.FC = () => {
     !currentChapter ||
     !currentChapter.contentBlocks ||
     currentChapter.contentBlocks.length === 0 ||
-    isDummyBlock
+    (isDummyBlock && !hasValidTextBlocks)
   );
 
   const [readerMode, setReaderMode] = useState<'text' | 'pdf'>('text');
 
   useEffect(() => {
-    if (isScannedDocument || isDummyBlock) {
+    if ((isScannedDocument || isDummyBlock) && !hasValidTextBlocks) {
       setReaderMode('pdf');
+    } else {
+      setReaderMode('text');
     }
-  }, [isScannedDocument, isDummyBlock]);
+  }, [isScannedDocument, isDummyBlock, hasValidTextBlocks]);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex flex-col">

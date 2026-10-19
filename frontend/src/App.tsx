@@ -17,6 +17,7 @@ import { BookmarksPage } from './pages/BookmarksPage';
 import { NotesPage } from './pages/NotesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ReaderPage } from './pages/ReaderPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Admin Pages
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
@@ -79,7 +80,8 @@ export const App: React.FC = () => {
     <BrowserRouter>
       <AuthProvider>
         <ReaderProvider>
-          <Layout>
+          <ErrorBoundary>
+            <Layout>
             <Routes>
               {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
@@ -200,6 +202,7 @@ export const App: React.FC = () => {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>
+          </ErrorBoundary>
         </ReaderProvider>
       </AuthProvider>
     </BrowserRouter>

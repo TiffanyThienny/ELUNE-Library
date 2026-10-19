@@ -169,45 +169,102 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setLoading(true);
     setError(null);
     try {
-      const res = await readerService.getReaderData(bookId);
-      if (res.success && res.data) {
-        const loadedBook = res.data.book || res.data;
-        const chaps = loadedBook.chapters || res.data.chapters || [];
-        setBook({ ...loadedBook, chapters: chaps });
-        setBookmarks(res.data.bookmarks || res.data.userBookmarks || []);
-        setNotes(res.data.notes || res.data.userNotes || []);
-        setChapters(chaps);
+      let loadedBook: any = null;
+      let loadedChapters: Chapter[] = [];
+      let loadedBookmarks: Bookmark[] = [];
+      let loadedNotes: Note[] = [];
+      let progress: any = null;
 
-        // Resume reading position
-        const progress = res.data.readingProgress;
-        let targetChapter = chaps[0];
-        let targetBlockId = null;
-        let targetPage = 1;
-
-        if (progress) {
-          if (progress.currentChapterId) {
-            const foundChap = chaps.find((c: Chapter) => c.id === progress.currentChapterId);
-            if (foundChap) targetChapter = foundChap;
-          }
-          if (progress.currentContentBlockId) {
-            targetBlockId = progress.currentContentBlockId;
-          }
-          if (progress.currentPage) {
-            targetPage = progress.currentPage;
-          }
-          setProgressPercentage(progress.progressPercentage || 0);
+      try {
+        const res = await readerService.getReaderData(bookId);
+        if (res.success && res.data) {
+          loadedBook = res.data.book || res.data;
+          loadedChapters = loadedBook.chapters || res.data.chapters || [];
+          loadedBookmarks = res.data.bookmarks || res.data.userBookmarks || [];
+          loadedNotes = res.data.notes || res.data.userNotes || [];
+          progress = res.data.readingProgress;
         }
+      } catch (apiErr) {
+        console.warn('Backend reader data fetch failed, checking local client storage:', apiErr);
+      }
 
-        setCurrentChapter(targetChapter || null);
-        setCurrentContentBlockId(targetBlockId);
-        setCurrentPage(targetPage);
-
-        // Load Audio for targetChapter
-        if (targetChapter) {
-          await loadChapterAudio(bookId, targetChapter.id);
+      // Resilient Fallback: check localStorage user uploads and library
+      if (!loadedBook || !loadedBook.id) {
+        try {
+          const userUploads = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
+          const myLib = JSON.parse(localStorage.getItem('elune_my_library') || '[]');
+          const allLocal = [...userUploads, ...myLib];
+          const found = allLocal.find((b: any) => b.id === bookId || b.id?.replace(/\D/g, '') === bookId?.replace(/\D/g, ''));
+          if (found) {
+            loadedBook = found;
+            loadedChapters = found.chapters || [];
+          }
+        } catch (e) {
+          console.warn('Local storage check failed', e);
         }
       }
+
+      if (!loadedBook || !loadedBook.title) {
+        throw new Error('Volume not found in library archive.');
+      }
+
+      // Ensure at least one chapter exists so reader can always display readable content
+      if (!loadedChapters || loadedChapters.length === 0) {
+        loadedChapters = [
+          {
+            id: `ch-default-${loadedBook.id}`,
+            bookId: loadedBook.id,
+            chapterNumber: 1,
+            title: loadedBook.title,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            contentBlocks: [
+              {
+                id: `cb-default-${loadedBook.id}`,
+                chapterId: `ch-default-${loadedBook.id}`,
+                blockIndex: 1,
+                type: 'PARAGRAPH',
+                pageNumber: 1,
+                text: loadedBook.description || `Welcome to ${loadedBook.title}. Prepared for quiet study in Elunè.`,
+                createdAt: new Date().toISOString(),
+              }
+            ]
+          }
+        ];
+      }
+
+      setBook({ ...loadedBook, chapters: loadedChapters });
+      setBookmarks(loadedBookmarks);
+      setNotes(loadedNotes);
+      setChapters(loadedChapters);
+
+      let targetChapter = loadedChapters[0];
+      let targetBlockId = null;
+      let targetPage = 1;
+
+      if (progress) {
+        if (progress.currentChapterId) {
+          const foundChap = loadedChapters.find((c: Chapter) => c.id === progress.currentChapterId);
+          if (foundChap) targetChapter = foundChap;
+        }
+        if (progress.currentContentBlockId) {
+          targetBlockId = progress.currentContentBlockId;
+        }
+        if (progress.currentPage) {
+          targetPage = progress.currentPage;
+        }
+        setProgressPercentage(progress.progressPercentage || 0);
+      }
+
+      setCurrentChapter(targetChapter || null);
+      setCurrentContentBlockId(targetBlockId);
+      setCurrentPage(targetPage);
+
+      if (targetChapter) {
+        await loadChapterAudio(bookId, targetChapter.id);
+      }
     } catch (err: any) {
+      console.error('Failed to load reader:', err);
       setError(err.message || 'Failed to load reader data');
     } finally {
       setLoading(false);
