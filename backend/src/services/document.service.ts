@@ -129,10 +129,17 @@ export class DocumentService {
     console.log(`[PDF EXTRACTION COMPLETE] Total detected pages: ${totalPages}, Pages with text: ${pageTexts.length}, Total characters: ${totalExtractedChars}`);
 
     // SCANNED / IMAGE-ONLY PDF DETECTION:
-    // If fewer than 100 characters were extracted across the entire document,
-    // or all pages had 0 text, it is genuinely a scanned / image-only PDF.
+    // A PDF is only treated as scanned/image-only when NO page yielded any
+    // extractable text. Short-but-valid PDFs (few characters, figure-heavy,
+    // or short documents) still contain real selectable text and must be kept
+    // as readable text content — not misclassified as scanned.
     // STRICT RULE: DO NOT generate fake content blocks!
-    if (totalExtractedChars < 100 || pageTexts.length === 0) {
+    const avgCharsPerPage = totalExtractedChars / Math.max(1, totalPages);
+    const isImageOnly =
+      pageTexts.length === 0 ||
+      (totalExtractedChars < 20 && avgCharsPerPage < 10);
+
+    if (isImageOnly) {
       console.log(`[PAGES DETECTED] Scanned / Image-only PDF identified. Extracted characters: ${totalExtractedChars}. No fake text generated.`);
       return {
         title: cleanTitle,

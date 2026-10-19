@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import { getLocalPdfFile } from '../utils/localBookStorage';
+import { API_BASE_URL, resolveAssetUrl } from '../services/api';
 import {
   ChevronLeft,
   ChevronRight,
@@ -65,12 +66,27 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
           }
         }
 
-        // 2. Fallback to fileUrl
-        if (!pdfSource && fileUrl) {
-          pdfSource = { url: fileUrl };
+        // 2. Fallback to backend-hosted file.
+        //    Prefer the authenticated streaming endpoint; fall back to the
+        //    static /uploads URL. Both must be resolved against the API origin
+        //    (fileUrl from the backend is host-relative, e.g. "/uploads/..").
+        if (!pdfSource) {
+          const token =
+            typeof window !== 'undefined'
+              ? window.localStorage.getItem('elune_token')
+              : null;
+
+          const absoluteFileUrl = resolveAssetUrl(fileUrl);
+          const streamUrl = `${API_BASE_URL}/api/books/${bookId}/file`;
+
+          pdfSource = {
+            url: absoluteFileUrl || streamUrl,
+            httpHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
+            withCredentials: false,
+          };
         }
 
-        if (!pdfSource) {
+        if (!pdfSource || (!pdfSource.url && !pdfSource.data)) {
           throw new Error('PDF file binary is not accessible for direct visual rendering.');
         }
 

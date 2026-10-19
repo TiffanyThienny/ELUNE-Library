@@ -1,6 +1,17 @@
 import { handleFallbackRequest } from './mockFallback';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+/**
+ * Resolve a possibly-relative asset path (e.g. "/uploads/book-123.pdf")
+ * returned by the backend into an absolute URL against the API origin.
+ * Already-absolute URLs (http/https/blob/data) are returned unchanged.
+ */
+export const resolveAssetUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  if (/^(https?:|blob:|data:)/i.test(url)) return url;
+  return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 class ApiClient {
   private getHeaders(customHeaders: Record<string, string> = {}): HeadersInit {

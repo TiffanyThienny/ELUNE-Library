@@ -4,6 +4,7 @@ import { categoryService, bookService } from '../services/api';
 import { Category } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { parsePdfFile, parseTextFile } from '../utils/pdfParser';
+import { saveLocalPdfFile } from '../utils/localBookStorage';
 import {
   UploadCloud,
   FileText,
@@ -140,16 +141,27 @@ export const UploadBookPage: React.FC = () => {
 
       if (res.success && res.data?.book) {
         const uploadedBook = res.data.book;
-        setSuccessMessage('Book ingested and processed successfully! Opening reader...');
+
+        // Persist the raw PDF blob locally so the reader can render it
+        // instantly (and offline) without re-fetching from the backend.
+        if (bookFile.name.toLowerCase().endsWith('.pdf')) {
+          try {
+            await saveLocalPdfFile(uploadedBook.id, bookFile);
+          } catch (storeErr) {
+            console.warn('Could not cache PDF blob locally', storeErr);
+          }
+        }
+
+        setSuccessMessage('Book uploaded successfully! Returning to your library...');
 
         setTimeout(() => {
-          navigate(`/read/${uploadedBook.id}`);
-        }, 1200);
+          navigate('/library');
+        }, 1000);
       } else {
-        setSuccessMessage('Upload successful! Redirecting to Explore...');
+        setSuccessMessage('Upload successful! Returning to your library...');
         setTimeout(() => {
-          navigate('/explore');
-        }, 1200);
+          navigate('/library');
+        }, 1000);
       }
     } catch (err: any) {
       setError(err.message || 'Book upload failed. Please try again.');
