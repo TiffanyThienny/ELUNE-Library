@@ -109,14 +109,36 @@ export const ReaderPage: React.FC = () => {
     xl: 'text-xl sm:text-2xl leading-loose',
   }[fontSize];
 
+  // Detect if chapter only contains a dummy / ingestion status placeholder sentence
+  const isDummyBlock = Boolean(
+    chapters.length <= 1 &&
+    (!currentChapter?.contentBlocks ||
+      currentChapter.contentBlocks.length === 0 ||
+      (currentChapter.contentBlocks.length === 1 &&
+        (currentChapter.contentBlocks[0].text.includes('Total scanned/detected pages') ||
+          currentChapter.contentBlocks[0].text.includes('scanned/detected') ||
+          currentChapter.contentBlocks[0].text.includes('Ingested Document') ||
+          currentChapter.contentBlocks[0].text.includes('uploaded successfully') ||
+          currentChapter.contentBlocks[0].text.includes('The volume is ready for study and reflection'))))
+  );
+
   const isScannedDocument = Boolean(
     book?.isScanned ||
     book?.processingStatus === 'FAILED' ||
     chapters.length === 0 ||
     !currentChapter ||
     !currentChapter.contentBlocks ||
-    currentChapter.contentBlocks.length === 0
+    currentChapter.contentBlocks.length === 0 ||
+    isDummyBlock
   );
+
+  const [readerMode, setReaderMode] = useState<'text' | 'pdf'>('text');
+
+  useEffect(() => {
+    if (isScannedDocument || isDummyBlock) {
+      setReaderMode('pdf');
+    }
+  }, [isScannedDocument, isDummyBlock]);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex flex-col">
@@ -136,13 +158,41 @@ export const ReaderPage: React.FC = () => {
                 {book.title}
               </h2>
               <span className="text-[11px] text-[#8C7355] font-medium">
-                {currentChapter ? `Chapter ${currentChapter.chapterNumber}: ${currentChapter.title}` : 'Prologue'}
+                {readerMode === 'pdf' || isScannedDocument
+                  ? `Visual Document • ${book.totalPages} Pages`
+                  : (currentChapter ? `Chapter ${currentChapter.chapterNumber}: ${currentChapter.title}` : 'Prologue')}
               </span>
             </div>
           </div>
 
           {/* Reader Preferences & Chapter shortcuts */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* View Mode Toggle: Clean Text vs Visual PDF */}
+            <div className="flex items-center bg-[#FAF7F2] border border-[#E8DFD3] rounded-xl p-0.5 text-xs font-semibold">
+              <button
+                onClick={() => setReaderMode('text')}
+                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                  readerMode === 'text'
+                    ? 'bg-[#2C2421] text-white shadow-2xs font-bold'
+                    : 'text-[#8C7355] hover:text-[#2C2421]'
+                }`}
+                title="Beralih ke mode teks digital"
+              >
+                📖 Teks
+              </button>
+              <button
+                onClick={() => setReaderMode('pdf')}
+                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                  readerMode === 'pdf'
+                    ? 'bg-[#2C2421] text-white shadow-2xs font-bold'
+                    : 'text-[#8C7355] hover:text-[#2C2421]'
+                }`}
+                title="Beralih ke mode visual PDF asli"
+              >
+                📄 PDF Asli
+              </button>
+            </div>
+
             <button
               onClick={() => setActiveTab('summary')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E8DFD3] hover:bg-[#FAF7F2] text-[#2C2421] text-xs font-semibold transition-colors shadow-2xs"
@@ -190,18 +240,18 @@ export const ReaderPage: React.FC = () => {
             <div>
               <div className="text-center pb-8 border-b border-[#F2ECE1] mb-8">
                 <span className="text-[11px] font-mono uppercase tracking-widest text-[#8C7355] font-bold">
-                  {isScannedDocument
-                    ? `Document Archive • ${book.totalPages} Pages`
+                  {readerMode === 'pdf' || isScannedDocument
+                    ? `Visual PDF Archive • ${book.totalPages} Pages`
                     : `Chapter ${currentChapter?.chapterNumber || 1} • Page ${currentPage}`}
                 </span>
                 <h1 className="font-serif-literata text-2xl sm:text-3xl font-bold text-[#2C2421] mt-2">
-                  {isScannedDocument ? book.title : (currentChapter?.title || 'Untitled Chapter')}
+                  {readerMode === 'pdf' || isScannedDocument ? book.title : (currentChapter?.title || 'Untitled Chapter')}
                 </h1>
               </div>
 
               {/* Paragraphs / Content Blocks */}
               <div className="space-y-6">
-                {isScannedDocument ? (
+                {readerMode === 'pdf' || isScannedDocument ? (
                   <PdfVisualReader
                     bookId={book.id}
                     fileUrl={book.fileUrl}

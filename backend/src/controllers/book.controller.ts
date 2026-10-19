@@ -40,7 +40,9 @@ export const formatBookForResponse = (book: any, progress?: any) => {
     id: book.id,
     title: book.title,
     author: book.author,
-    category: book.category ? book.category.name : 'General',
+    category: book.category
+      ? { id: book.category.id, name: book.category.name, slug: book.category.slug }
+      : { id: book.categoryId || '', name: 'General', slug: 'general' },
     categoryId: book.categoryId,
     coverBg: book.coverBg || 'linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)',
     coverTextColor: book.coverTextColor || '#FAF0E6',
@@ -302,12 +304,21 @@ export const getMyUploads = async (req: Request, res: Response): Promise<void> =
       title: b.title,
       author: b.author,
       description: b.description,
-      category: b.category ? b.category.name : 'General',
+      category: b.category
+        ? { id: b.category.id, name: b.category.name, slug: (b.category as any).slug }
+        : { id: b.categoryId || '', name: 'General', slug: 'general' },
+      categoryId: b.categoryId,
       coverBg: b.coverBg,
       coverTextColor: b.coverTextColor,
+      coverUrl: b.coverUrl,
+      fileUrl: b.fileUrl,
+      fileType: b.fileType,
+      totalPages: b.totalPages,
+      language: b.language || 'en',
       visibility: b.visibility,
       status: b.status,
       rejectionReason: b.rejectionReason,
+      uploadedBy: b.uploadedBy,
       chaptersCount: b._count.chapters,
       createdAt: b.createdAt
     }));

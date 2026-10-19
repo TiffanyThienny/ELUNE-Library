@@ -27,7 +27,7 @@ export const BookDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [inLibrary, setInLibrary] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryData, setSummaryData] = useState<any>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -40,6 +40,9 @@ export const BookDetailPage: React.FC = () => {
       .then((res) => {
         if (res.success && res.data?.book) {
           setBook(res.data.book);
+        } else if (res.success && res.data) {
+          // Some endpoints return book directly in data
+          setBook(res.data as any);
         }
       })
       .catch((err) => {
@@ -97,8 +100,11 @@ export const BookDetailPage: React.FC = () => {
     setSummaryLoading(true);
     try {
       const res = await aiService.summarizeBook(book.id);
-      if (res.success && res.data?.summary) {
-        setSummary(res.data.summary.content);
+      if (res.success && res.data) {
+        // The AI endpoint returns GeneratedSummary directly in res.data
+        // It may be wrapped in { summary: ... } or directly as the object
+        const summaryObj = res.data.summary || res.data;
+        setSummaryData(summaryObj);
         setToast({ message: 'AI synthesis complete', type: 'success' });
       }
     } catch (err: any) {
@@ -263,15 +269,73 @@ export const BookDetailPage: React.FC = () => {
       </div>
 
       {/* Summary Section if generated */}
-      {summary && (
-        <div className="bg-white border border-[#E8DFD3] rounded-3xl p-6 sm:p-8 shadow-xs space-y-3">
+      {summaryData && (
+        <div className="bg-white border border-[#E8DFD3] rounded-3xl p-6 sm:p-8 shadow-xs space-y-5">
           <div className="flex items-center gap-2 text-xs font-bold text-[#8C7355] uppercase tracking-wider">
             <FileText className="w-4 h-4" />
             Executive Synthesis
           </div>
-          <div className="font-serif-literata text-xs sm:text-sm text-[#2C2421] leading-relaxed whitespace-pre-line">
-            {summary}
-          </div>
+
+          {/* Quick Overview */}
+          {summaryData.quickOverview && (
+            <p className="font-serif-literata text-sm sm:text-base text-[#2C2421] leading-relaxed">
+              {summaryData.quickOverview}
+            </p>
+          )}
+
+          {/* Main Ideas */}
+          {summaryData.mainIdeas && summaryData.mainIdeas.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-[#8C7355] uppercase tracking-wider mb-2">Main Ideas</h4>
+              <ul className="space-y-1.5">
+                {summaryData.mainIdeas.map((idea: string, i: number) => (
+                  <li key={i} className="flex items-start gap-2 text-xs sm:text-sm text-[#2C2421]">
+                    <span className="w-5 h-5 rounded-lg bg-[#FAF7F2] border border-[#E8DFD3] text-[10px] font-bold text-[#8C7355] flex items-center justify-center shrink-0 mt-0.5">
+                      {i + 1}
+                    </span>
+                    <span>{idea}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Key Takeaways */}
+          {summaryData.keyTakeaways && summaryData.keyTakeaways.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-[#8C7355] uppercase tracking-wider mb-2">Key Takeaways</h4>
+              <ul className="space-y-1.5">
+                {summaryData.keyTakeaways.map((takeaway: string, i: number) => (
+                  <li key={i} className="flex items-start gap-2 text-xs sm:text-sm text-[#665A4F]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>{takeaway}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Important Concepts */}
+          {summaryData.importantConcepts && summaryData.importantConcepts.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-[#8C7355] uppercase tracking-wider mb-2">Important Concepts</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {summaryData.importantConcepts.map((concept: { title: string; explanation: string }, i: number) => (
+                  <div key={i} className="p-3 rounded-2xl bg-[#FAF7F2] border border-[#E8DFD3]">
+                    <h5 className="text-xs font-bold text-[#2C2421] mb-1">{concept.title}</h5>
+                    <p className="text-[11px] text-[#665A4F] leading-snug">{concept.explanation}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fallback: if summaryData is just a string */}
+          {typeof summaryData === 'string' && (
+            <div className="font-serif-literata text-xs sm:text-sm text-[#2C2421] leading-relaxed whitespace-pre-line">
+              {summaryData}
+            </div>
+          )}
         </div>
       )}
 

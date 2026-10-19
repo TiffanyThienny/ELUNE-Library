@@ -44,7 +44,7 @@ export const getLibrary = async (req: Request, res: Response): Promise<void> => 
       addedAt: ub.addedAt
     }));
 
-    sendSuccess(res, { books: libraryItems }, 'Personal library retrieved');
+    sendSuccess(res, { library: libraryItems }, 'Personal library retrieved');
   } catch (error: any) {
     console.error('getLibrary error:', error);
     sendError(res, 'Failed to fetch personal library', error.message, 500);

@@ -11,12 +11,6 @@ export const SummaryPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (currentChapter && !summary) {
-      generateChapterSummary();
-    }
-  }, [currentChapter?.id]);
-
   const generateChapterSummary = async () => {
     if (!currentChapter) return;
     setLoading(true);
@@ -51,24 +45,15 @@ export const SummaryPanel: React.FC = () => {
     }
   };
 
-  const isScannedOrEmpty = Boolean(
-    book?.isScanned ||
-    book?.processingStatus === 'FAILED' ||
-    !currentChapter?.contentBlocks ||
-    currentChapter.contentBlocks.length === 0
-  );
-
-  if (isScannedOrEmpty) {
-    return (
-      <div className="p-6 bg-[#FAF7F2] border border-[#E8DFD3] rounded-2xl text-center space-y-2">
-        <FileText className="w-6 h-6 text-[#8C7355] mx-auto opacity-70" />
-        <p className="text-xs font-bold text-[#2C2421]">AI Summary Unavailable</p>
-        <p className="text-[11px] text-[#665A4F] leading-relaxed">
-          This book does not contain readable digital text, so AI summarization is unavailable.
-        </p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (book && !summary) {
+      if (currentChapter?.contentBlocks && currentChapter.contentBlocks.length > 1) {
+        generateChapterSummary();
+      } else {
+        generateBookSummary();
+      }
+    }
+  }, [book?.id, currentChapter?.id]);
 
   return (
     <div className="space-y-4">

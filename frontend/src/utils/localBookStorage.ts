@@ -92,3 +92,28 @@ export async function getLocalPdfFile(bookId: string): Promise<Blob | ArrayBuffe
     return null;
   }
 }
+
+export async function getLatestLocalPdfFile(): Promise<Blob | ArrayBuffer | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction([STORE_FILES], 'readonly');
+      const store = tx.objectStore(STORE_FILES);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const results = req.result;
+        if (results && results.length > 0) {
+          results.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+          resolve(results[0].data);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch (err) {
+    return null;
+  }
+}
+
+

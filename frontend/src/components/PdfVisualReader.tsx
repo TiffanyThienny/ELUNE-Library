@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import { getLocalPdfFile } from '../utils/localBookStorage';
+import { getLocalPdfFile, getLatestLocalPdfFile, saveLocalPdfFile } from '../utils/localBookStorage';
 import { API_BASE_URL, resolveAssetUrl } from '../services/api';
 import {
   ChevronLeft,
@@ -13,6 +13,7 @@ import {
   FileText,
   Loader2,
   AlertTriangle,
+  Upload,
 } from 'lucide-react';
 
 if (typeof window !== 'undefined') {
@@ -40,23 +41,32 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [rendering, setRendering] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMissingBinary, setIsMissingBinary] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfDocRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
 
-  // Load PDF Document
-  useEffect(() => {
-    let isMounted = true;
+  const initPdf = async (customFile?: File) => {
     setLoading(true);
     setError(null);
+    setIsMissingBinary(false);
 
-    async function initPdf() {
-      try {
-        let pdfSource: any = null;
+    try {
+      let pdfSource: any = null;
 
-        // 1. Try local IndexedDB file blob first
-        const localBlob = await getLocalPdfFile(bookId);
+      if (customFile) {
+        await saveLocalPdfFile(bookId, customFile);
+        const buffer = await customFile.arrayBuffer();
+        pdfSource = { data: new Uint8Array(buffer) };
+      } else {
+        // 1. Try local IndexedDB file blob for this bookId
+        let localBlob = await getLocalPdfFile(bookId);
+        // Fallback: check if there is any recently uploaded PDF blob in local storage
+        if (!localBlob) {
+          localBlob = await getLatestLocalPdfFile();
+        }
+
         if (localBlob) {
           if (localBlob instanceof Blob) {
             const buffer = await localBlob.arrayBuffer();
@@ -66,11 +76,8 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
           }
         }
 
-        // 2. Fallback to backend-hosted file.
-        //    Prefer the authenticated streaming endpoint; fall back to the
-        //    static /uploads URL. Both must be resolved against the API origin
-        //    (fileUrl from the backend is host-relative, e.g. "/uploads/..").
-        if (!pdfSource) {
+        // 2. Fallback to backend-hosted file
+        if (!pdfSource && fileUrl) {
           const token =
             typeof window !== 'undefined'
               ? window.localStorage.getItem('elune_token')
@@ -85,31 +92,35 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
             withCredentials: false,
           };
         }
-
-        if (!pdfSource || (!pdfSource.url && !pdfSource.data)) {
-          throw new Error('PDF file binary is not accessible for direct visual rendering.');
-        }
-
-        const loadingTask = pdfjsLib.getDocument({
-          ...pdfSource,
-          useSystemFonts: true,
-          isEvalSupported: false,
-        });
-
-        const doc = await loadingTask.promise;
-        if (!isMounted) return;
-
-        pdfDocRef.current = doc;
-        setTotalPages(doc.numPages);
-        setLoading(false);
-      } catch (err: any) {
-        if (!isMounted) return;
-        console.error('Failed to load visual PDF document:', err);
-        setError(err.message || 'Unable to load PDF document for visual rendering.');
-        setLoading(false);
       }
-    }
 
+      if (!pdfSource || (!pdfSource.url && !pdfSource.data)) {
+        setIsMissingBinary(true);
+        setLoading(false);
+        return;
+      }
+
+      const loadingTask = pdfjsLib.getDocument({
+        ...pdfSource,
+        useSystemFonts: true,
+        isEvalSupported: false,
+      });
+
+      const doc = await loadingTask.promise;
+      pdfDocRef.current = doc;
+      setTotalPages(doc.numPages);
+      setLoading(false);
+    } catch (err: any) {
+      console.error('Failed to load visual PDF document:', err);
+      setIsMissingBinary(true);
+      setError(err.message || 'Unable to load PDF document for visual rendering.');
+      setLoading(false);
+    }
+  };
+
+  // Load PDF Document
+  useEffect(() => {
+    let isMounted = true;
     initPdf();
 
     return () => {
@@ -230,18 +241,38 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
     );
   }
 
-  if (error) {
+  if (isMissingBinary || error) {
     return (
-      <div className="py-16 text-center space-y-4 bg-[#FAF7F2] rounded-3xl p-8 border border-[#E8DFD3] max-w-xl mx-auto my-6">
-        <div className="w-14 h-14 rounded-2xl bg-amber-100/70 text-amber-800 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
-          <AlertTriangle className="w-7 h-7 text-[#8C7355]" />
+      <div className="py-12 px-6 text-center space-y-5 bg-[#FAF7F2] rounded-3xl p-8 border border-[#E8DFD3] max-w-xl mx-auto my-6 shadow-xs">
+        <div className="w-14 h-14 rounded-2xl bg-amber-100/80 text-amber-900 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
+          <FileText className="w-7 h-7 text-[#8C7355]" />
         </div>
-        <h3 className="font-serif-literata text-xl font-bold text-[#2C2421]">
-          Visual Document Viewer Notice
-        </h3>
-        <p className="text-xs sm:text-sm text-[#665A4F] max-w-md mx-auto leading-relaxed">
-          {error}
-        </p>
+        <div className="space-y-2">
+          <h3 className="font-serif-literata text-xl font-bold text-[#2C2421]">
+            Halaman PDF Siap Ditampilkan
+          </h3>
+          <p className="text-xs sm:text-sm text-[#665A4F] max-w-md mx-auto leading-relaxed">
+            Untuk membaca dan melihat visualisasi halaman buku ini secara utuh, silakan muat file PDF dokumen dari perangkat Anda satu kali. File akan langsung disimpan di browser untuk dibaca seterusnya.
+          </p>
+        </div>
+
+        <div>
+          <label className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs font-semibold cursor-pointer transition-all shadow-xs hover:scale-[1.02]">
+            <Upload className="w-4 h-4" />
+            <span>Pilih File PDF untuk Membaca</span>
+            <input
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  initPdf(file);
+                }
+              }}
+            />
+          </label>
+        </div>
       </div>
     );
   }
