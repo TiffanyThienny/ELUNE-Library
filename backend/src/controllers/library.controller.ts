@@ -12,11 +12,26 @@ export const getLibrary = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    // Ensure all books uploaded by this user are registered in their library
+    const uploadedBooks = await prisma.book.findMany({
+      where: { uploadedBy: userId },
+      select: { id: true }
+    });
+    for (const ub of uploadedBooks) {
+      await prisma.userBook.upsert({
+        where: { userId_bookId: { userId, bookId: ub.id } },
+        update: {},
+        create: { userId, bookId: ub.id }
+      }).catch(() => {});
+    }
+
     const userBooks = await prisma.userBook.findMany({
       where: { userId },
       include: {
         book: {
           include: {
+            category: true,
+            uploader: { select: { id: true, name: true } },
             chapters: {
               select: { id: true, chapterNumber: true, title: true, _count: { select: { contentBlocks: true } } },
               orderBy: { chapterNumber: 'asc' }

@@ -25,13 +25,23 @@ const fileFilter = (
   file: Express.Multer.File,
   cb: multer.FileFilterCallback
 ) => {
-  const allowedExtensions = ['.pdf', '.epub'];
   const ext = path.extname(file.originalname).toLowerCase();
-  
-  if (allowedExtensions.includes(ext)) {
+  const bookExtensions = ['.pdf', '.epub', '.txt', '.md'];
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'];
+
+  if (file.fieldname === 'cover' || file.fieldname === 'coverImage') {
+    if (imageExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid cover image format (${ext}). Allowed: JPG, PNG, WEBP.`));
+    }
+    return;
+  }
+
+  if (bookExtensions.includes(ext) || imageExtensions.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only PDF and EPUB files are allowed.'));
+    cb(new Error(`Invalid file type (${ext}). Allowed formats: PDF, EPUB, TXT, MD.`));
   }
 };
 
@@ -42,3 +52,10 @@ export const uploadBookFile = multer({
   },
   fileFilter
 });
+
+export const uploadBookFields = uploadBookFile.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'cover', maxCount: 1 },
+  { name: 'coverImage', maxCount: 1 }
+]);
+

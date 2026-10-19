@@ -51,11 +51,13 @@ export const PersonalLibraryPage: React.FC = () => {
           bookService.getMyUploads(),
         ]);
 
-        if (libRes.success && libRes.data?.library) {
-          setLibraryBooks(libRes.data.library);
+        if (libRes.success) {
+          const items = libRes.data?.library || (Array.isArray(libRes.data) ? libRes.data : []);
+          setLibraryBooks(items);
         }
-        if (uploadRes.success && uploadRes.data?.books) {
-          setUploadedBooks(uploadRes.data.books);
+        if (uploadRes.success) {
+          const uploads = uploadRes.data?.books || (Array.isArray(uploadRes.data) ? uploadRes.data : []);
+          setUploadedBooks(uploads);
         }
       } catch (err) {
         console.error('Failed to load library items', err);

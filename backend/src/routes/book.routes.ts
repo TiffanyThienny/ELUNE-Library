@@ -14,7 +14,7 @@ import {
   deleteBook,
 } from '../controllers/book.controller';
 import { authenticateJwt, optionalAuth } from '../middleware/auth.middleware';
-import { uploadBookFile } from '../middleware/upload.middleware';
+import { uploadBookFields } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -30,7 +30,7 @@ router.put('/:id/progress', authenticateJwt, saveBookProgress);
 router.get('/:id/audio', optionalAuth, getBookAudio);
 router.post('/:id/audio/generate', authenticateJwt, generateBookAudio);
 router.get('/:id/file', optionalAuth, getBookFile);
-router.post('/upload', authenticateJwt, uploadBookFile.single('file'), uploadBook);
+router.post('/upload', authenticateJwt, uploadBookFields, uploadBook);
 router.delete('/:id', authenticateJwt, deleteBook);
 
 export default router;

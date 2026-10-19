@@ -340,10 +340,23 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const file = req.file;
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    const file = req.file || files?.['file']?.[0];
     if (!file) {
-      sendError(res, 'No book file uploaded. Please upload a PDF or EPUB.', 'FILE_REQUIRED', 400);
+      sendError(res, 'No book file uploaded. Please upload a PDF, EPUB, or TXT file.', 'FILE_REQUIRED', 400);
       return;
+    }
+
+    // Handle uploaded cover image if provided
+    const coverFile = files?.['cover']?.[0] || files?.['coverImage']?.[0];
+    let coverUrl: string | null = req.body.coverUrl || null;
+    if (coverFile) {
+      try {
+        const uploadedCover = await storageService.uploadFile(coverFile);
+        coverUrl = uploadedCover.fileUrl;
+      } catch (covErr) {
+        console.warn('Cover upload failed, continuing with existing coverUrl:', covErr);
+      }
     }
 
     // Validate file extension
@@ -359,7 +372,7 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    let extracted;
+    let extracted: any;
     try {
       if (ext === 'PDF') {
         extracted = await documentService.parsePdf(file.path, file.originalname);
@@ -369,9 +382,68 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         extracted = await documentService.parseEpub(file.path, file.originalname);
       }
     } catch (parseError: any) {
-      console.error('Document parsing failed:', parseError);
-      sendError(res, 'Unable to read this PDF file.', 'INVALID_PDF', 400);
-      return;
+      console.error('Server document parsing failed, checking client extracted chapters:', parseError);
+      if (req.body.extractedChapters) {
+        try {
+          const clientChapters = typeof req.body.extractedChapters === 'string'
+            ? JSON.parse(req.body.extractedChapters)
+            : req.body.extractedChapters;
+          if (Array.isArray(clientChapters) && clientChapters.length > 0) {
+            extracted = {
+              title: req.body.title || file.originalname.replace(/\.[^/.]+$/, ''),
+              totalPages: Number(req.body.totalPages) || 1,
+              fullText: '',
+              isScannedOrEmpty: false,
+              totalTextChars: 1000,
+              chapters: clientChapters.map((ch: any, idx: number) => ({
+                chapterNumber: ch.chapterNumber || (idx + 1),
+                title: ch.title || `Chapter ${idx + 1}`,
+                contentBlocks: (ch.contentBlocks || []).map((b: any, bIdx: number) => ({
+                  blockIndex: b.blockIndex ?? bIdx,
+                  type: BlockType.PARAGRAPH,
+                  text: b.text || '',
+                  pageNumber: b.pageNumber || 1,
+                  startOffset: 0,
+                  endOffset: (b.text || '').length,
+                })),
+              })),
+            };
+          }
+        } catch (clientErr) {
+          console.warn('Client extractedChapters fallback failed:', clientErr);
+        }
+      }
+
+      if (!extracted) {
+        sendError(res, 'Unable to read this PDF file.', 'INVALID_PDF', 400);
+        return;
+      }
+    }
+
+    // If server parsing gave 0 chapters or marked scanned, check if client supplied extracted chapters
+    if ((!extracted.chapters || extracted.chapters.length === 0) && req.body.extractedChapters) {
+      try {
+        const clientChapters = typeof req.body.extractedChapters === 'string'
+          ? JSON.parse(req.body.extractedChapters)
+          : req.body.extractedChapters;
+        if (Array.isArray(clientChapters) && clientChapters.length > 0) {
+          extracted.isScannedOrEmpty = false;
+          extracted.chapters = clientChapters.map((ch: any, idx: number) => ({
+            chapterNumber: ch.chapterNumber || (idx + 1),
+            title: ch.title || `Chapter ${idx + 1}`,
+            contentBlocks: (ch.contentBlocks || []).map((b: any, bIdx: number) => ({
+              blockIndex: b.blockIndex ?? bIdx,
+              type: BlockType.PARAGRAPH,
+              text: b.text || '',
+              pageNumber: b.pageNumber || 1,
+              startOffset: 0,
+              endOffset: (b.text || '').length,
+            })),
+          }));
+        }
+      } catch (parseFallbackErr) {
+        console.warn('Client chapters fallback parse failed:', parseFallbackErr);
+      }
     }
 
     const { fileUrl } = await storageService.uploadFile(file);
@@ -398,6 +470,7 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         author,
         description,
         categoryId,
+        coverUrl,
         coverBg: req.body.coverBg || 'linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)',
         coverTextColor: '#FAF0E6',
         fileUrl,
@@ -414,11 +487,11 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         chapters: isScanned
           ? undefined
           : {
-              create: extracted.chapters.map((ch) => ({
+              create: extracted.chapters.map((ch: any) => ({
                 chapterNumber: ch.chapterNumber,
                 title: ch.title,
                 contentBlocks: {
-                  create: ch.contentBlocks.map((block) => ({
+                  create: ch.contentBlocks.map((block: any) => ({
                     blockIndex: block.blockIndex,
                     type: BlockType.PARAGRAPH,
                     text: block.text,
