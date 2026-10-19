@@ -20,7 +20,7 @@ import {
   SlidersHorizontal,
   Sparkles,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 type TabType = 'all' | 'private' | 'uploads' | 'saved';
 type SortType = 'newest' | 'title-asc' | 'title-desc' | 'author-asc' | 'pages-desc' | 'pages-asc';
@@ -31,6 +31,9 @@ export const PersonalLibraryPage: React.FC = () => {
   const [libraryBooks, setLibraryBooks] = useState<Book[]>([]);
   const [uploadedBooks, setUploadedBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [searchParams] = useSearchParams();
+  const uploadedId = searchParams.get('uploaded');
 
   // Filter & Search Controls
   const [activeTab, setActiveTab] = useState<TabType>('all');
@@ -140,8 +143,21 @@ export const PersonalLibraryPage: React.FC = () => {
       return timeB - timeA;
     });
 
+    if (uploadedId && sortBy === 'newest') {
+      const idx = list.findIndex((b) => b.id === uploadedId);
+      if (idx > 0) {
+        const [target] = list.splice(idx, 1);
+        list.unshift(target);
+      }
+    }
+
     return list;
-  }, [combinedBooks, privateBooks, uploadedBooks, libraryBooks, activeTab, statusFilter, searchQuery, sortBy]);
+  }, [combinedBooks, privateBooks, uploadedBooks, libraryBooks, activeTab, statusFilter, searchQuery, sortBy, uploadedId]);
+
+  const recentlyUploadedBook = useMemo(
+    () => (uploadedId ? combinedBooks.find((b) => b.id === uploadedId) : null),
+    [uploadedId, combinedBooks]
+  );
 
   const hasActiveFilters = searchQuery !== '' || statusFilter !== 'all' || sortBy !== 'newest';
 
@@ -234,6 +250,50 @@ export const PersonalLibraryPage: React.FC = () => {
           <span className="text-[11px] text-stone-500 mt-0.5 block">Visible to all readers</span>
         </div>
       </div>
+
+      {/* Newly Uploaded Highlight Banner */}
+      {recentlyUploadedBook && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-amber-50/90 border-2 border-amber-300 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5 animate-fade-in">
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-600/15 flex items-center justify-center shrink-0 text-amber-800">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 bg-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  Buku Baru Berhasil Di-upload
+                </span>
+                <span className="text-[11px] text-emerald-800 font-semibold bg-emerald-100 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Tersimpan di Database
+                </span>
+              </div>
+              <h3 className="font-serif-literata font-bold text-lg sm:text-xl text-[#2C2421] mt-1.5">
+                "{recentlyUploadedBook.title}"
+              </h3>
+              <p className="text-xs sm:text-sm text-[#665A4F] mt-0.5">
+                Oleh <span className="font-semibold text-[#2C2421]">{recentlyUploadedBook.author || 'Penulis Dokumen'}</span> • Buku telah diproses dan siap dibuka langsung di pembaca atau ditelaah dengan AI.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <Link
+              to={`/read/${recentlyUploadedBook.id}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs font-semibold shadow-xs transition-all hover:scale-[1.02]"
+            >
+              <BookOpen className="w-4 h-4" />
+              Baca Sekarang
+            </Link>
+            <Link
+              to={`/book/${recentlyUploadedBook.id}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white hover:bg-stone-50 border border-[#E8DFD3] text-[#2C2421] text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              Detail & AI Summary
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex border-b border-[#E8DFD3] gap-2 sm:gap-6 overflow-x-auto pb-1 scrollbar-none">
@@ -438,13 +498,29 @@ export const PersonalLibraryPage: React.FC = () => {
       ) : processedBooks.length > 0 ? (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-            {processedBooks.map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                showStatus={true}
-              />
-            ))}
+            {processedBooks.map((book) => {
+              const isNewlyUploaded = book.id === uploadedId;
+              return (
+                <div
+                  key={book.id}
+                  className={`relative rounded-2xl transition-all duration-300 ${
+                    isNewlyUploaded
+                      ? 'ring-4 ring-amber-400 ring-offset-2 ring-offset-[#FAF7F2] shadow-md scale-[1.01]'
+                      : ''
+                  }`}
+                >
+                  {isNewlyUploaded && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap bg-amber-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-md flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" /> Baru Di-upload
+                    </div>
+                  )}
+                  <BookCard
+                    book={book}
+                    showStatus={true}
+                  />
+                </div>
+              );
+            })}
           </div>
         ) : (
           /* Structured Table / List View */

@@ -21,6 +21,7 @@ const router = Router();
 router.get('/', optionalAuth, getBooks);
 router.get('/public', optionalAuth, getBooks);
 router.get('/my-uploads', authenticateJwt, getMyUploads);
+router.get('/my/uploads', authenticateJwt, getMyUploads);
 router.get('/:id', optionalAuth, getBookById);
 router.get('/:id/processing-status', optionalAuth, getProcessingStatus);
 router.get('/:id/content', optionalAuth, getBookContent);

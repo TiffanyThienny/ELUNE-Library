@@ -123,7 +123,7 @@ export const bookService = {
     api.post<{ success: boolean; data: { book: any }; message: string }>('/api/books/upload', formData),
 
   getMyUploads: () =>
-    api.get<{ success: boolean; data: { books: any[] } }>('/api/books/my/uploads'),
+    api.get<{ success: boolean; data: { books: any[] } }>('/api/books/my-uploads'),
 };
 
 // Library Service

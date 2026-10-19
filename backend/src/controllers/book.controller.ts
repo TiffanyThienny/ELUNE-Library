@@ -496,7 +496,8 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         ? 'Upload successful. Your book is published and available for all readers.'
         : 'Upload successful. Your private volume is ready in your personal sanctuary.';
 
-    sendSuccess(res, formatBookForResponse(book), message, 201);
+    const formattedBook = formatBookForResponse(book);
+    sendSuccess(res, { book: formattedBook, ...formattedBook }, message, 201);
   } catch (error: any) {
     console.error('uploadBook error:', error);
     sendError(res, 'Failed to process and upload book', error.message, 500);

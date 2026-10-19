@@ -55,7 +55,10 @@ export const UploadBookPage: React.FC = () => {
       setCreatedBook(mockBook);
       addUploadedBook(mockBook);
       setStep('ready');
-    }, 2800);
+      setTimeout(() => {
+        navigateTo('library');
+      }, 900);
+    }, 2000);
   };
 
   /* ── shared surface token ── */

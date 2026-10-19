@@ -139,12 +139,12 @@ export const UploadBookPage: React.FC = () => {
       setProcessingStatus('Saving volume to library archive...');
       const res = await bookService.upload(formData);
 
-      if (res.success && res.data?.book) {
-        const uploadedBook = res.data.book;
+      const uploadedBook = res.data?.book || res.data;
 
+      if (res.success && uploadedBook && uploadedBook.id) {
         // Persist the raw PDF blob locally so the reader can render it
         // instantly (and offline) without re-fetching from the backend.
-        if (bookFile.name.toLowerCase().endsWith('.pdf')) {
+        if (bookFile && bookFile.name.toLowerCase().endsWith('.pdf')) {
           try {
             await saveLocalPdfFile(uploadedBook.id, bookFile);
           } catch (storeErr) {
@@ -152,16 +152,16 @@ export const UploadBookPage: React.FC = () => {
           }
         }
 
-        setSuccessMessage('Book uploaded successfully! Returning to your library...');
+        setSuccessMessage('Book uploaded and saved to database! Returning to your library...');
 
         setTimeout(() => {
-          navigate('/library');
-        }, 1000);
+          navigate(`/library?uploaded=${encodeURIComponent(uploadedBook.id)}`);
+        }, 800);
       } else {
-        setSuccessMessage('Upload successful! Returning to your library...');
+        setSuccessMessage('Book uploaded successfully! Returning to your library...');
         setTimeout(() => {
           navigate('/library');
-        }, 1000);
+        }, 800);
       }
     } catch (err: any) {
       setError(err.message || 'Book upload failed. Please try again.');
