@@ -26,17 +26,36 @@ class ApiClient {
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const isHttpsOrigin = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const isLocalApi = API_BASE_URL.startsWith('http://localhost') || API_BASE_URL.startsWith('http://127.0.0.1');
+
+    // If running on HTTPS (e.g. Vercel) and API URL is HTTP localhost,
+    // browsers block this as Mixed Content / Private Network Access.
+    // Instead of letting fetch hang indefinitely, immediately use fallback:
+    if (isHttpsOrigin && isLocalApi) {
+      return handleFallbackRequest<T>(endpoint, options);
+    }
+
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = this.getHeaders(options.headers as Record<string, string>);
+
+    // Add AbortController timeout to prevent hanging connections
+    const controller = new AbortController();
+    const isUpload = options.body instanceof FormData;
+    const timeoutMs = isUpload ? 15000 : 6000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           ...headers,
           ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         },
       });
+
+      clearTimeout(timeoutId);
 
       const data = await response.json().catch(() => ({}));
 
@@ -50,17 +69,22 @@ class ApiClient {
 
       return data;
     } catch (err: any) {
+      clearTimeout(timeoutId);
+
       // If error was returned by an active server (e.g. validation error, 401), rethrow it
       if (
         err.message &&
         !err.message.includes('Failed to fetch') &&
         !err.message.includes('NetworkError') &&
-        !err.message.includes('Load failed')
+        !err.message.includes('Load failed') &&
+        !err.message.includes('aborted') &&
+        err.name !== 'AbortError'
       ) {
         throw err;
       }
 
-      // Network unreachable (e.g. on Vercel preview without external backend URL)
+      // Network unreachable or timed out (e.g. on Vercel preview without external backend URL)
+      console.warn(`API unreachable or timed out (${url}), utilizing client sanctuary storage.`);
       return handleFallbackRequest<T>(endpoint, options);
     }
   }

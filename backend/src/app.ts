@@ -26,6 +26,14 @@ export const createApp = (): Express => {
     'http://127.0.0.1:5173'
   ];
 
+  // Pre-flight Private Network Access support
+  app.use((req, res, next) => {
+    if (req.headers['access-control-request-private-network']) {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+  });
+
   app.use(
     cors({
       origin: (origin, callback) => {
@@ -38,7 +46,7 @@ export const createApp = (): Express => {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization']
+      allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Request-Private-Network']
     })
   );
 

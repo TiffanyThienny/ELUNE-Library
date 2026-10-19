@@ -597,7 +597,7 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
   }
 
   // 6. User Uploaded Books
-  if (path === '/api/books/my/uploads' && method === 'GET') {
+  if ((path === '/api/books/my-uploads' || path === '/api/books/my/uploads') && method === 'GET') {
     const userUploads: Book[] = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
     return {
       success: true,
