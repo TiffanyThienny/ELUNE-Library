@@ -25,9 +25,15 @@ export class LocalStorageService implements IStorageService {
   }
 
   async deleteFile(storageKey: string): Promise<void> {
-    const filePath = path.join(ENV.UPLOAD_DIR, storageKey);
-    if (fs.existsSync(filePath)) {
+    // Only a bare filename inside UPLOAD_DIR may be deleted (no path traversal).
+    const name = path.basename(storageKey);
+    if (!name || name !== storageKey) return;
+    const filePath = path.join(ENV.UPLOAD_DIR, name);
+    try {
       await fs.promises.unlink(filePath);
+    } catch (err: any) {
+      // Idempotent: a file that is already gone is the desired end state.
+      if (err?.code !== 'ENOENT') throw err;
     }
   }
 

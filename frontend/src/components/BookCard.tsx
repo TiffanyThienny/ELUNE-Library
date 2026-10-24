@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Book } from '../types';
+import { resolveAssetUrl } from '../services/api';
 import { BookOpen, Lock, Globe, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface BookCardProps {
@@ -33,7 +34,7 @@ export const BookCard: React.FC<BookCardProps> = ({
       <Link to={`/book/${book.id}`} className="relative aspect-[3/4] w-full overflow-hidden bg-[#FAF7F2]">
         {book.coverUrl ? (
           <img
-            src={book.coverUrl}
+            src={resolveAssetUrl(book.coverUrl) || undefined}
             alt={book.title}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             loading="lazy"

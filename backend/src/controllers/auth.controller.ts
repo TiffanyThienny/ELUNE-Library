@@ -155,6 +155,8 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+// Stateless JWT: nothing to destroy server-side; the client discards its token.
+// Routed as POST /api/auth/logout (idempotent, no token required).
 export const logout = async (_req: Request, res: Response): Promise<void> => {
   sendSuccess(res, {}, 'Logged out successfully');
 };

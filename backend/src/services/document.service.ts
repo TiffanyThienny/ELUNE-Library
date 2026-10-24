@@ -29,6 +29,61 @@ export interface ExtractedDocument {
   isScannedOrEmpty: boolean;
   totalTextChars: number;
   chapters: ExtractedChapter[];
+  /**
+   * Why no selectable text was found (only set when isScannedOrEmpty):
+   *  - IMAGES: pages paint raster images (scanned/photographed pages; needs OCR)
+   *  - VECTOR_ONLY: pages draw only vector paths (e.g. text converted to outlines; needs OCR)
+   *  - BLANK: sampled pages paint nothing at all (empty document)
+   *  - UNKNOWN: content could not be inspected
+   */
+  noTextReason?: 'IMAGES' | 'VECTOR_ONLY' | 'BLANK' | 'UNKNOWN';
+}
+
+// pdfjs operator codes that paint raster images or vector paths.
+const IMAGE_PAINT_OPS = new Set<number>(
+  ['paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject', 'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup', 'paintImageMaskXObjectGroup', 'paintImageMaskXObjectRepeat', 'paintSolidColorImageMask']
+    .map((name) => pdfjsLib.OPS?.[name])
+    .filter((v: unknown): v is number => typeof v === 'number')
+);
+const PATH_PAINT_OPS = new Set<number>(
+  ['fill', 'eoFill', 'stroke', 'fillStroke', 'eoFillStroke', 'closeStroke', 'closeFillStroke', 'closeEOFillStroke', 'shadingFill']
+    .map((name) => pdfjsLib.OPS?.[name])
+    .filter((v: unknown): v is number => typeof v === 'number')
+);
+const MAX_PAGES_TO_INSPECT_FOR_IMAGES = 5;
+
+/** Inspect the first pages of a text-less PDF to tell scanned pages from blank ones. */
+async function classifyTextlessPdf(pdfDoc: any): Promise<'IMAGES' | 'VECTOR_ONLY' | 'BLANK' | 'UNKNOWN'> {
+  try {
+    let sawPaths = false;
+    const pages = Math.min(pdfDoc.numPages || 0, MAX_PAGES_TO_INSPECT_FOR_IMAGES);
+    for (let p = 1; p <= pages; p++) {
+      const page = await pdfDoc.getPage(p);
+      const ops = await page.getOperatorList();
+      for (const fn of ops.fnArray as number[]) {
+        if (IMAGE_PAINT_OPS.has(fn)) return 'IMAGES';
+        if (PATH_PAINT_OPS.has(fn)) sawPaths = true;
+      }
+    }
+    return sawPaths ? 'VECTOR_ONLY' : 'BLANK';
+  } catch (err) {
+    console.warn('[PDF EXTRACTION] Could not inspect page content for images:', err);
+    return 'UNKNOWN';
+  }
+}
+
+/** User-facing processing message for a PDF without selectable text. No OCR is performed. */
+export function describeTextlessPdf(reason?: ExtractedDocument['noTextReason']): string {
+  switch (reason) {
+    case 'IMAGES':
+      return 'This PDF contains scanned pages and does not have selectable text. OCR is not available, so AI features are disabled for this book.';
+    case 'VECTOR_ONLY':
+      return 'This PDF draws its text as shapes rather than selectable characters. OCR is not available, so AI features are disabled for this book.';
+    case 'BLANK':
+      return 'This PDF appears to be blank: no text or images were found on its pages.';
+    default:
+      return 'No selectable text could be extracted from this PDF. AI features are disabled for this book.';
+  }
 }
 
 export class DocumentService {
@@ -55,6 +110,7 @@ export class DocumentService {
     const pageTexts: { pageNumber: number; text: string }[] = [];
     let totalExtractedChars = 0;
     let totalPages = 1;
+    let pdfDocForInspection: any = null;
 
     console.log(`[PDF EXTRACTION START] Extracting text page-by-page from ${originalName}...`);
 
@@ -67,6 +123,7 @@ export class DocumentService {
         disableFontFace: true,
       });
       const pdfDoc = await loadingTask.promise;
+      pdfDocForInspection = pdfDoc;
       totalPages = pdfDoc.numPages || 1;
 
       for (let pNum = 1; pNum <= totalPages; pNum++) {
@@ -140,7 +197,9 @@ export class DocumentService {
       (totalExtractedChars < 20 && avgCharsPerPage < 10);
 
     if (isImageOnly) {
-      console.log(`[PAGES DETECTED] Scanned / Image-only PDF identified. Extracted characters: ${totalExtractedChars}. No fake text generated.`);
+      const noTextReason = pdfDocForInspection ? await classifyTextlessPdf(pdfDocForInspection) : 'UNKNOWN';
+      await pdfDocForInspection?.destroy?.().catch?.(() => {});
+      console.log(`[PAGES DETECTED] PDF without selectable text (reason=${noTextReason}). Extracted characters: ${totalExtractedChars}. No fake text generated.`);
       return {
         title: cleanTitle,
         totalPages,
@@ -148,8 +207,10 @@ export class DocumentService {
         isScannedOrEmpty: true,
         totalTextChars: totalExtractedChars,
         chapters: [], // Strict: No fake chapters or fake paragraphs!
+        noTextReason,
       };
     }
+    await pdfDocForInspection?.destroy?.().catch?.(() => {});
 
     console.log(`[PAGES DETECTED] ${pageTexts.length} pages containing valid readable text found.`);
 
@@ -208,47 +269,14 @@ export class DocumentService {
   }
 
   /**
-   * Parse EPUB document
+   * EPUB is NOT supported. An EPUB is a ZIP archive; the previous implementation
+   * read it as UTF-8 and stored compressed binary data as "paragraphs". Uploads
+   * are rejected before reaching this point (upload.middleware). This method
+   * throws so no code path can silently treat EPUB bytes as text again.
+   * Real support needs a ZIP/EPUB parser dependency (requires approval).
    */
-  async parseEpub(filePath: string, originalName: string): Promise<ExtractedDocument> {
-    const cleanTitle = originalName.replace(/\.(pdf|epub)$/i, '').replace(/[_-]/g, ' ');
-    let fullText = '';
-    try {
-      fullText = await fs.promises.readFile(filePath, 'utf-8');
-    } catch {
-      fullText = `Uploaded EPUB content for ${cleanTitle}`;
-    }
-
-    const paragraphs = fullText
-      .replace(/<[^>]*>/g, ' ')
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
-
-    const blocks: ExtractedBlock[] = paragraphs.map((text, idx) => ({
-      blockIndex: idx + 1,
-      type: 'PARAGRAPH',
-      text,
-      pageNumber: Math.max(1, Math.ceil((idx + 1) / 3)),
-      startOffset: 0,
-      endOffset: text.length,
-    }));
-
-    return {
-      title: cleanTitle,
-      totalPages: Math.max(1, Math.ceil(blocks.length / 3)),
-      fullText,
-      isScannedOrEmpty: fullText.trim().length === 0,
-      totalTextChars: fullText.length,
-      chapters: [
-        {
-          chapterNumber: 1,
-          title: 'Introduction & Core Themes',
-          contentBlocks: blocks,
-          readingTime: `${Math.max(5, Math.ceil(fullText.split(/\s+/).length / 200))} mins`,
-        },
-      ],
-    };
+  async parseEpub(_filePath: string, _originalName: string): Promise<ExtractedDocument> {
+    throw Object.assign(new Error('EPUB files are not supported yet.'), { statusCode: 415, code: 'UNSUPPORTED_FORMAT' });
   }
 
   /**

@@ -47,23 +47,128 @@ async function main() {
   let adminToken = '';
   let userToken = '';
   let user2Token = '';
-  const testBookId = 'meditations-aurelius';
-  let privateBookId = 'private-journal-eleanor';
-  let pendingBookId = 'deep-work-focus';
+
+  // --- Self-provisioned test fixtures (do NOT depend on dummy seed data) ---
+  // All fixture IDs/emails are prefixed 'test-' so they are identifiable and
+  // are cleaned up at the end, keeping the DB free of persistent dummy content.
+  const testBookId = 'test-fixture-public-book';
+  const privateBookId = 'test-fixture-private-book';
+  const pendingBookId = 'test-fixture-pending-book';
+  const testRejectId = 'test-fixture-reject-book';
+  const fixtureUserEmail = 'test-fixture-user@elune.read';
+  const fixtureUserPassword = 'password123';
+  const fixtureChapterId = 'test-fixture-ch-1';
   let createdBookmarkId = '';
   let createdNoteId = '';
 
-  // Ensure pending book exists in PENDING state
-  await prisma.book.upsert({
-    where: { id: pendingBookId },
-    update: { status: 'PENDING', visibility: 'PUBLIC' },
+  // Ensure an admin account exists (the seed also creates this; upsert is safe).
+  const bcryptMod = await import('bcryptjs');
+  await prisma.user.upsert({
+    where: { email: 'admin@elune.read' },
+    update: { role: 'ADMIN' },
     create: {
+      name: 'Elunè Administrator',
+      email: 'admin@elune.read',
+      passwordHash: await bcryptMod.default.hash('admin123', 10),
+      role: 'ADMIN'
+    }
+  });
+
+  // Fixture user (owner of private/pending/reject fixtures).
+  const fixtureUser = await prisma.user.upsert({
+    where: { email: fixtureUserEmail },
+    update: { role: 'USER' },
+    create: {
+      name: 'Test Fixture User',
+      email: fixtureUserEmail,
+      passwordHash: await bcryptMod.default.hash(fixtureUserPassword, 10),
+      role: 'USER'
+    }
+  });
+
+  // Clean any prior fixture books (idempotent reruns).
+  await prisma.book.deleteMany({
+    where: { id: { in: [testBookId, privateBookId, pendingBookId, testRejectId] } }
+  });
+
+  // Public + APPROVED fixture book WITH chapter, content blocks, and audio.
+  await prisma.book.create({
+    data: {
+      id: testBookId,
+      title: 'Test Fixture: Meditations',
+      author: 'Marcus Aurelius',
+      description: 'Public approved fixture used for reader/bookmark/note/audio/AI tests.',
+      totalPages: 10,
+      language: 'en',
+      visibility: 'PUBLIC',
+      status: 'APPROVED',
+      uploadedBy: fixtureUser.id,
+      chapters: {
+        create: [
+          {
+            id: fixtureChapterId,
+            title: 'Fixture Chapter One',
+            chapterNumber: 1,
+            contentBlocks: {
+              create: [
+                { id: 'test-cb-1', blockIndex: 1, type: 'PARAGRAPH', pageNumber: 1, text: 'When you wake up in the morning, tell yourself: the people I deal with today will be meddling, ungrateful, and arrogant.' },
+                { id: 'test-cb-2', blockIndex: 2, type: 'PARAGRAPH', pageNumber: 1, text: 'But I have seen the beauty of good and the ugliness of evil, and have recognized a shared human nature.' },
+                { id: 'test-cb-3', blockIndex: 3, type: 'PARAGRAPH', pageNumber: 2, text: 'We were born to work together like feet, hands, and the rows of the upper and lower teeth.' },
+                { id: 'test-cb-4', blockIndex: 4, type: 'PARAGRAPH', pageNumber: 2, text: 'Perform every act of your life as if it were your last, free from carelessness and self-love.' }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  // Audio track + segments for the fixture chapter.
+  await prisma.audioTrack.create({
+    data: {
+      id: 'test-at-1',
+      bookId: testBookId,
+      chapterId: fixtureChapterId,
+      audioUrl: `/audio/stream/${testBookId}/${fixtureChapterId}.mp3`,
+      duration: 50.0,
+      segments: {
+        create: [
+          { contentBlockId: 'test-cb-1', startTime: 0.0, endTime: 12.5 },
+          { contentBlockId: 'test-cb-2', startTime: 12.5, endTime: 26.8 },
+          { contentBlockId: 'test-cb-3', startTime: 26.8, endTime: 40.0 },
+          { contentBlockId: 'test-cb-4', startTime: 40.0, endTime: 50.0 }
+        ]
+      }
+    }
+  });
+
+  // Private fixture book (owned by fixtureUser).
+  await prisma.book.create({
+    data: {
+      id: privateBookId,
+      title: 'Test Fixture: Private Journal',
+      author: 'Test Fixture User',
+      description: 'Private fixture, owner-only access.',
+      totalPages: 5,
+      language: 'en',
+      visibility: 'PRIVATE',
+      status: 'APPROVED',
+      uploadedBy: fixtureUser.id
+    }
+  });
+
+  // Pending fixture book (public awaiting approval).
+  await prisma.book.create({
+    data: {
       id: pendingBookId,
-      title: 'Deep Work and Peaceful Focus',
-      author: 'Kaelen Mori',
-      description: 'Pending review book',
+      title: 'Test Fixture: Pending Review',
+      author: 'Test Fixture User',
+      description: 'Pending review fixture.',
+      totalPages: 5,
+      language: 'en',
       status: 'PENDING',
-      visibility: 'PUBLIC'
+      visibility: 'PUBLIC',
+      uploadedBy: fixtureUser.id
     }
   });
 
@@ -93,7 +198,7 @@ async function main() {
     const res = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'demo@elune.read', password: 'password123' })
+      body: JSON.stringify({ email: fixtureUserEmail, password: fixtureUserPassword })
     });
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
@@ -185,19 +290,18 @@ async function main() {
     assert(json.data.book.visibility === 'PUBLIC', 'Book should now be PUBLIC');
   });
 
-  // Test Admin Reject with reason
-  const testRejectId = 'test-rejected-volume';
+  // Test Admin Reject with reason (testRejectId fixture, owned by fixtureUser)
   await prisma.book.upsert({
     where: { id: testRejectId },
     update: { status: 'PENDING', visibility: 'PUBLIC' },
     create: {
       id: testRejectId,
-      title: 'Sample Rejected Manuscript',
-      author: 'Author Demo',
+      title: 'Test Fixture: Rejected Manuscript',
+      author: 'Test Fixture User',
       description: 'Manuscript awaiting review',
       status: 'PENDING',
       visibility: 'PUBLIC',
-      uploadedBy: (await prisma.user.findUnique({ where: { email: 'demo@elune.read' } }))?.id
+      uploadedBy: fixtureUser.id
     }
   });
 
@@ -273,15 +377,15 @@ async function main() {
         Authorization: `Bearer ${userToken}`
       },
       body: JSON.stringify({
-        currentChapterId: 'ch-med-1',
-        currentContentBlockId: 'cb-med-1-3',
+        currentChapterId: fixtureChapterId,
+        currentContentBlockId: 'test-cb-3',
         currentPage: 1,
         progressPercentage: 25.0
       })
     });
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(json.data.currentContentBlockId === 'cb-med-1-3', 'Current content block should be saved');
+    assert(json.data.currentContentBlockId === 'test-cb-3', 'Current content block should be saved');
   });
 
   // 12. Bookmark per Paragraph
@@ -293,8 +397,8 @@ async function main() {
         Authorization: `Bearer ${userToken}`
       },
       body: JSON.stringify({
-        chapterId: 'ch-med-1',
-        contentBlockId: 'cb-med-1-4',
+        chapterId: fixtureChapterId,
+        contentBlockId: 'test-cb-4',
         pageNumber: 2,
         note: 'Important thought on human kinship'
       })
@@ -327,8 +431,8 @@ async function main() {
         Authorization: `Bearer ${userToken}`
       },
       body: JSON.stringify({
-        chapterId: 'ch-med-1',
-        contentBlockId: 'cb-med-1-2',
+        chapterId: fixtureChapterId,
+        contentBlockId: 'test-cb-2',
         pageNumber: 1,
         content: 'Simplicity in living removes unnecessary agitation.'
       })
@@ -365,7 +469,7 @@ async function main() {
 
   // 14. Audio + Segment Synchronization
   await runTest('GET /api/audio/:bookId/:chapterId should return synchronized segments', async () => {
-    const res = await fetch(`${baseUrl}/api/audio/${testBookId}/ch-med-1`);
+    const res = await fetch(`${baseUrl}/api/audio/${testBookId}/${fixtureChapterId}`);
     const json = await res.json();
     assert(res.status === 200, `Expected 200, got ${res.status}`);
     assert(json.data.track.segments.length > 0, 'Audio segments should be present');
@@ -606,7 +710,16 @@ async function main() {
     assert(aiJson.message.includes('readable text') || aiJson.error.includes('readable text'), 'Must return readable text notice');
   });
 
-  // Clean up
+  // Clean up all self-provisioned fixtures so the DB holds no leftover test data.
+  await prisma.book.deleteMany({
+    where: { id: { in: [testBookId, privateBookId, pendingBookId, testRejectId] } }
+  });
+  if (uploadedPdfBookId) {
+    await prisma.book.deleteMany({ where: { id: uploadedPdfBookId } });
+  }
+  await prisma.book.deleteMany({ where: { title: { in: ['Sejarah Rahasia Kuno', 'Dokumen Scan Fotokopi'] }, uploadedBy: fixtureUser.id } });
+  await prisma.user.deleteMany({ where: { email: { in: [fixtureUserEmail, u2Email] } } });
+
   server.close();
   await prisma.$disconnect();
 

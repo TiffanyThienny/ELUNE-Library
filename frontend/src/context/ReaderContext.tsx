@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Book, Chapter, ContentBlock, AudioSegment, Bookmark, Note } from '../types';
-import { readerService, bookmarkService, noteService, audioService } from '../services/api';
+import { readerService, bookmarkService, noteService, audioService, IS_DEMO_MOCK_MODE } from '../services/api';
 
 interface ReaderContextType {
   book: Book | null;
@@ -184,12 +184,18 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           loadedNotes = res.data.notes || res.data.userNotes || [];
           progress = res.data.readingProgress;
         }
-      } catch (apiErr) {
-        console.warn('Backend reader data fetch failed, checking local client storage:', apiErr);
+      } catch (apiErr: any) {
+        // An authoritative server answer (401/403/404) must never be bypassed by local
+        // data, and in real-backend mode the local lists are demo data only.
+        const status = apiErr?.status;
+        if (!IS_DEMO_MOCK_MODE || status === 401 || status === 403 || status === 404) {
+          throw apiErr;
+        }
+        console.warn('Backend reader data fetch failed, checking local client storage (demo mode):', apiErr);
       }
 
-      // Resilient Fallback: check localStorage user uploads and library
-      if (!loadedBook || !loadedBook.id) {
+      // Demo-mode fallback only: check localStorage user uploads and library
+      if (IS_DEMO_MOCK_MODE && (!loadedBook || !loadedBook.id)) {
         try {
           const userUploads = JSON.parse(localStorage.getItem('elune_user_uploads') || '[]');
           const myLib = JSON.parse(localStorage.getItem('elune_my_library') || '[]');
@@ -208,8 +214,16 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('Volume not found in library archive.');
       }
 
-      // Ensure at least one chapter exists so reader can always display readable content
-      if (!loadedChapters || loadedChapters.length === 0) {
+      // For scanned / failed / text-less books, DO NOT synthesize a fake chapter
+      // from the description. These must fall through to the visual PDF reader so
+      // the user sees the actual document, not the upload description.
+      const isScannedOrFailed = Boolean(
+        loadedBook.isScanned || loadedBook.processingStatus === 'FAILED'
+      );
+
+      // Only create a placeholder chapter for genuinely empty (non-scanned) books,
+      // so the reader can still render something rather than crashing.
+      if ((!loadedChapters || loadedChapters.length === 0) && !isScannedOrFailed) {
         loadedChapters = [
           {
             id: `ch-default-${loadedBook.id}`,

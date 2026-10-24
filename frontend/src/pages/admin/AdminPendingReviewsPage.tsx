@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../services/api';
+import { adminService, resolveAssetUrl } from '../../services/api';
 import { Book } from '../../types';
 import { AdminSidebar } from '../../components/Sidebar';
 import { LoadingState } from '../../components/LoadingState';
@@ -123,7 +123,7 @@ export const AdminPendingReviewsPage: React.FC = () => {
                 {/* Cover Preview */}
                 <div className="w-full sm:w-44 aspect-[3/4] shrink-0 rounded-2xl overflow-hidden bg-[#FAF7F2] border border-[#E8DFD3]">
                   {book.coverUrl ? (
-                    <img src={book.coverUrl} alt={book.title} className="w-full h-full object-cover" />
+                    <img src={resolveAssetUrl(book.coverUrl) || undefined} alt={book.title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-[#EBDDC8] to-[#D9C8B4] p-4 flex flex-col justify-end text-[#2C2421]">
                       <span className="text-[10px] font-bold text-[#8C7355] uppercase">

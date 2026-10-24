@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
+import { answerFromResponse } from '../utils/aiResponse';
 import { Send, BookOpen, User, MessageSquare } from 'lucide-react';
 
 interface ChatMessage {
@@ -32,14 +33,13 @@ export const AIChat: React.FC = () => {
 
     try {
       const res = await aiService.askQuestion(book.id, questionText);
-      if (res.success && res.data?.chat) {
-        const aiMsg: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          sender: 'ai',
-          text: res.data.chat.answer,
-        };
-        setMessages((prev) => [...prev, aiMsg]);
-      }
+      const answer = res.success ? answerFromResponse(res.data) : null;
+      const aiMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: answer ?? 'No answer was returned for this question. Please try again.',
+      };
+      setMessages((prev) => [...prev, aiMsg]);
     } catch (err: any) {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),

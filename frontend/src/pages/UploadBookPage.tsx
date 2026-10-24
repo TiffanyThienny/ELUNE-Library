@@ -1,6 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { categoryService, bookService } from '../services/api';
+import { categoryService, bookService, IS_DEMO_MOCK_MODE } from '../services/api';
+import {
+  computeUploadTimeoutMs,
+  createClientUploadId,
+  reconcileUpload,
+  uploadFingerprint,
+} from '../utils/uploadReliability';
 import { Category } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { parsePdfFile, parseTextFile } from '../utils/pdfParser';
@@ -35,7 +41,12 @@ const LANGUAGE_OPTIONS = [
 
 export const UploadBookPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  // Synchronous guard against double-clicks before React re-renders with loading=true.
+  const submittingRef = useRef(false);
+  // The logical upload in flight / last attempted. Its clientUploadId is reused for
+  // retries of the same file+metadata so the server never creates a second book.
+  const attemptRef = useRef<{ fingerprint: string; clientUploadId: string; uncertain: boolean } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
 
   // Form State
@@ -70,17 +81,76 @@ export const UploadBookPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Prevent duplicate submissions while an upload is already in progress.
+    if (loading || submittingRef.current) return;
+
     if (!bookFile) {
-      setError('Please provide a book file (PDF, EPUB, or TXT).');
+      setError('Please choose a book file (PDF, TXT, or MD).');
       return;
     }
 
+    // Client-side validation: type, empty, and size. Mirrors the backend rules
+    // so the user gets immediate feedback without a round-trip.
+    const lowerName = bookFile.name.toLowerCase();
+    if (lowerName.endsWith('.epub')) {
+      // Same rule as the backend: EPUB parsing is not implemented.
+      setError('EPUB files are not supported yet. Please upload the book as a PDF (text-based PDFs work best), TXT, or MD file.');
+      return;
+    }
+    const allowedExt = ['.pdf', '.txt', '.md'];
+    const hasAllowedExt = allowedExt.some((ext) => lowerName.endsWith(ext));
+    if (!hasAllowedExt) {
+      setError('Unsupported file type. Please upload a PDF, TXT, or MD file.');
+      return;
+    }
+    if (bookFile.size === 0) {
+      setError('The selected file is empty. Please choose a valid document.');
+      return;
+    }
+    const MAX_BYTES = 50 * 1024 * 1024;
+    if (bookFile.size > MAX_BYTES) {
+      setError('File size exceeds the 50MB limit. Please upload a smaller document.');
+      return;
+    }
+    if (!title.trim()) {
+      setError('Please provide a book title.');
+      return;
+    }
+    if (!author.trim()) {
+      setError('Please provide an author name.');
+      return;
+    }
+
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
+
+    const effectiveVisibility = isAdmin ? 'PUBLIC' : visibility;
+    const fingerprint = uploadFingerprint(bookFile, { title, visibility: effectiveVisibility });
+    if (!attemptRef.current || attemptRef.current.fingerprint !== fingerprint) {
+      attemptRef.current = {
+        fingerprint,
+        clientUploadId: createClientUploadId(
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto ? () => crypto.randomUUID() : undefined
+        ),
+        uncertain: false,
+      };
+    }
+    const attempt = attemptRef.current;
 
     try {
-      const effectiveVisibility = isAdmin ? 'PUBLIC' : visibility;
+      // A previous attempt of this same upload ended without a definite answer:
+      // ask the server first instead of sending the file again.
+      if (attempt.uncertain && !IS_DEMO_MOCK_MODE) {
+        const settled = await reconcileAndReport(attempt.clientUploadId, bookFile);
+        if (settled) return;
+      }
+
       const formData = new FormData();
+      // Sent first so the server sees it with the other fields.
+      formData.append('clientUploadId', attempt.clientUploadId);
       formData.append('title', (title.trim() || bookFile.name.replace(/\.[^/.]+$/, '')));
       formData.append('author', (author.trim() || 'Author'));
       formData.append('description', description.trim());
@@ -90,13 +160,25 @@ export const UploadBookPage: React.FC = () => {
 
       formData.append('file', bookFile);
 
-      // Extract PDF/Text chapters and paragraphs client-side so results appear immediately
-      if (bookFile.name.toLowerCase().endsWith('.pdf')) {
-        setProcessingStatus('Starting document analysis...');
+      // Client-side extraction is a best-effort OPTIMIZATION only. The backend
+      // re-parses the file and is the source of truth, so client parsing must
+      // never block or hang the upload. We cap it with a hard timeout and
+      // silently continue if it is slow (large/complex PDFs) or fails.
+      const withTimeout = <R,>(promise: Promise<R>, ms: number): Promise<R | null> =>
+        Promise.race([
+          promise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+        ]);
+
+      if (lowerName.endsWith('.pdf')) {
+        setProcessingStatus('Analyzing document (optional preview)...');
         try {
-          const parsed = await parsePdfFile(bookFile, (current, total) => {
-            setProcessingStatus(`Extracting text from PDF (page ${current} of ${total})...`);
-          });
+          const parsed = await withTimeout(
+            parsePdfFile(bookFile, (current, total) => {
+              setProcessingStatus(`Extracting text from PDF (page ${current} of ${total})...`);
+            }),
+            20000
+          );
           if (parsed) {
             formData.append('totalPages', String(parsed.totalPages));
             if (parsed.isScanned) {
@@ -104,14 +186,16 @@ export const UploadBookPage: React.FC = () => {
             } else if (parsed.chapters && parsed.chapters.length > 0) {
               formData.append('extractedChapters', JSON.stringify(parsed.chapters));
             }
+          } else {
+            console.warn('Client-side PDF parse timed out; backend will handle extraction.');
           }
         } catch (pdfErr) {
           console.warn('Client-side PDF parse error, continuing upload', pdfErr);
         }
-      } else if (bookFile.name.toLowerCase().endsWith('.txt') || bookFile.name.toLowerCase().endsWith('.md')) {
+      } else if (lowerName.endsWith('.txt') || lowerName.endsWith('.md')) {
         setProcessingStatus('Extracting paragraphs from document...');
         try {
-          const parsed = await parseTextFile(bookFile);
+          const parsed = await withTimeout(parseTextFile(bookFile), 10000);
           if (parsed && parsed.chapters.length > 0) {
             formData.append('extractedChapters', JSON.stringify(parsed.chapters));
             formData.append('totalPages', String(parsed.totalPages));
@@ -121,53 +205,112 @@ export const UploadBookPage: React.FC = () => {
         }
       }
 
-      // Convert cover to DataURL if provided for immediate preview
+      // Send the cover as a file only. The backend stores it and returns a real
+      // URL. We deliberately do NOT send a base64 data-URL copy, which bloats the
+      // multipart request and can exceed field-size limits (the cause of failed
+      // uploads when a cover image was attached).
       if (coverFile) {
         formData.append('cover', coverFile);
-        try {
-          const reader = new FileReader();
-          const coverDataUrl = await new Promise<string>((resolve) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.readAsDataURL(coverFile);
-          });
-          formData.append('coverUrl', coverDataUrl);
-        } catch (coverErr) {
-          console.warn('Cover preview generation skipped', coverErr);
-        }
       }
 
-      setProcessingStatus('Saving volume to library archive...');
-      const res = await bookService.upload(formData);
+      setProcessingStatus('Uploading and processing your book. Large files can take a few minutes...');
+      const totalBytes = bookFile.size + (coverFile?.size || 0);
+      const res = await bookService.upload(formData, { timeoutMs: computeUploadTimeoutMs(totalBytes) });
 
       const uploadedBook = res.data?.book || res.data;
-
-      if (res.success && uploadedBook && uploadedBook.id) {
-        // Persist the raw PDF blob locally so the reader can render it
-        // instantly (and offline) without re-fetching from the backend.
-        if (bookFile && bookFile.name.toLowerCase().endsWith('.pdf')) {
-          try {
-            await saveLocalPdfFile(uploadedBook.id, bookFile);
-          } catch (storeErr) {
-            console.warn('Could not cache PDF blob locally', storeErr);
-          }
-        }
-
-        setSuccessMessage('Book uploaded and saved to database! Returning to your library...');
-
-        setTimeout(() => {
-          navigate(`/library?uploaded=${encodeURIComponent(uploadedBook.id)}`);
-        }, 800);
-      } else {
-        setSuccessMessage('Book uploaded successfully! Returning to your library...');
-        setTimeout(() => {
-          navigate('/library');
-        }, 800);
+      if (!res.success || !uploadedBook?.id) {
+        // Never claim success without a persisted book id.
+        throw new Error('The server did not confirm the upload. Check your library before trying again.');
       }
+      // Saved, but a follow-up step (library link / response preparation) failed server-side.
+      const serverNote = (res.data as any)?.partial || (res.data as any)?.libraryLinked === false ? res.message : undefined;
+      await completeUpload(uploadedBook, bookFile, serverNote);
     } catch (err: any) {
-      setError(err.message || 'Book upload failed. Please try again.');
+      const uncertainOutcome =
+        !IS_DEMO_MOCK_MODE &&
+        (err?.code === 'CLIENT_TIMEOUT' || err?.code === 'NETWORK_ERROR' || err?.code === 'UPLOAD_IN_PROGRESS');
+      if (uncertainOutcome) {
+        // The server may still be processing (or may have finished). Do not resend.
+        attempt.uncertain = true;
+        await reconcileAndReport(attempt.clientUploadId, bookFile);
+      } else {
+        setError(err.message || 'Book upload failed. Please try again.');
+      }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
       setProcessingStatus(null);
+    }
+  };
+
+  /** Success path: only reached with a server-confirmed, persisted book id. */
+  const completeUpload = async (uploadedBook: any, file: File, serverNote?: string) => {
+    attemptRef.current = null;
+    // Cache the raw PDF for this user + book so the reader can open it instantly.
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      try {
+        await saveLocalPdfFile(uploadedBook.id, file, user?.id);
+      } catch (storeErr) {
+        console.warn('Could not cache PDF blob locally', storeErr);
+      }
+    }
+    const note =
+      uploadedBook.processingStatus === 'FAILED'
+        ? ' The PDF was saved, but no text could be extracted, so AI features are unavailable for it.'
+        : '';
+    setSuccessMessage(
+      serverNote
+        ? `${serverNote} Returning to your library...`
+        : `Book uploaded and saved.${note} Returning to your library...`
+    );
+    setTimeout(() => {
+      navigate(`/library?uploaded=${encodeURIComponent(uploadedBook.id)}`);
+    }, 800);
+  };
+
+  /**
+   * Ask the server what happened to an upload attempt. Returns true when the
+   * outcome is settled for now (success shown, or user told to wait), false when
+   * the caller may (re)send the file with the same clientUploadId.
+   */
+  const reconcileAndReport = async (clientUploadId: string, file: File): Promise<boolean> => {
+    setProcessingStatus('Checking whether the server received your upload...');
+    const result = await reconcileUpload(
+      async () => {
+        const r = await bookService.getUploadStatus(clientUploadId);
+        return { status: r.data.status, book: r.data.book };
+      },
+      { attempts: 6, intervalMs: 5000 }
+    );
+    const attempt = attemptRef.current;
+    switch (result.status) {
+      case 'completed':
+        if (result.book?.id) {
+          await completeUpload(result.book, file);
+          return true;
+        }
+        setError('The server reports the upload finished but returned no book. Check your library.');
+        return true;
+      case 'processing':
+        setError(
+          'Your upload is still being processed by the server. Please do not upload it again. Press "Upload" in a minute to check its status; no duplicate will be created.'
+        );
+        return true;
+      case 'failed':
+        if (attempt) attempt.uncertain = false;
+        setError('The server could not process this upload. Check the file and try again.');
+        return true;
+      case 'unknown':
+        if (attempt) attempt.uncertain = false;
+        setError(
+          'The server has no record of this upload (the connection dropped before it arrived, or the server restarted). Check your library, then try again.'
+        );
+        return true;
+      default:
+        setError(
+          'Cannot reach the server to confirm your upload. Check your connection, then press "Upload" again. It will check the status first instead of re-sending the file.'
+        );
+        return true;
     }
   };
 
@@ -183,7 +326,7 @@ export const UploadBookPage: React.FC = () => {
           Upload a Volume
         </h1>
         <p className="text-xs sm:text-sm text-[#665A4F] mt-1">
-          Ingest your PDF or EPUB document into Elunè. The system splits the text into canonical paragraph blocks for synchronous audio & study.
+          Ingest your PDF document into Elunè. The system splits the text into canonical paragraph blocks for synchronous audio & study.
         </p>
       </div>
 
@@ -290,14 +433,17 @@ export const UploadBookPage: React.FC = () => {
           <div className="p-4 border-2 border-dashed border-[#E8DFD3] rounded-2xl bg-[#FAF7F2]/60 text-center hover:border-[#8C7355] transition-colors">
             <FileText className="w-8 h-8 text-[#8C7355] mx-auto mb-2 opacity-80" />
             <span className="block text-xs font-semibold text-[#2C2421]">Book File *</span>
-            <span className="block text-[11px] text-[#8C7355] mb-3">PDF, EPUB, or TXT</span>
+            <span className="block text-[11px] text-[#8C7355] mb-3">PDF, TXT, or MD (EPUB not supported yet)</span>
             <input
               type="file"
               required
-              accept=".pdf,.epub,.txt"
+              aria-label="Book file"
+              accept=".pdf,.txt,.md"
+              disabled={loading}
               onChange={(e) => {
                 const file = e.target.files?.[0] || null;
                 setBookFile(file);
+                setError(null);
                 if (file && !title.trim()) {
                   const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
                   setTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
@@ -305,6 +451,12 @@ export const UploadBookPage: React.FC = () => {
               }}
               className="text-xs text-[#665A4F] file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#2C2421] file:text-white hover:file:bg-[#433832]"
             />
+            {bookFile && (
+              <span className="block mt-2 text-[11px] text-[#665A4F] break-all" aria-live="polite">
+                {bookFile.name} · {(bookFile.size / (1024 * 1024)).toFixed(1)} MB
+                {bookFile.size > 50 * 1024 * 1024 ? ' (over the 50 MB limit)' : ''}
+              </span>
+            )}
           </div>
 
           {/* Cover Image */}
@@ -314,7 +466,9 @@ export const UploadBookPage: React.FC = () => {
             <span className="block text-[11px] text-[#8C7355] mb-3">JPEG, PNG, or WebP</span>
             <input
               type="file"
-              accept="image/*"
+              aria-label="Cover image"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              disabled={loading}
               onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
               className="text-xs text-[#665A4F] file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#2C2421] file:text-white hover:file:bg-[#433832]"
             />

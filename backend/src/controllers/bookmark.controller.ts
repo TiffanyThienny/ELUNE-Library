@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { ensureParagraphAnchorAccess } from '../utils/bookAccess.util';
 
 export const getBookBookmarks = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -93,6 +94,8 @@ export const createBookmark = async (req: Request, res: Response): Promise<void>
       sendError(res, 'contentBlockId and chapterId are required for canonical paragraph bookmark', 'VALIDATION_ERROR', 400);
       return;
     }
+
+    if (!(await ensureParagraphAnchorAccess(req, res, bookId, chapterId, contentBlockId))) return;
 
     const bookmark = await prisma.bookmark.upsert({
       where: {

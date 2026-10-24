@@ -12,6 +12,7 @@ import {
   uploadBook,
   getMyUploads,
   deleteBook,
+  getUploadStatus,
 } from '../controllers/book.controller';
 import { authenticateJwt, optionalAuth } from '../middleware/auth.middleware';
 import { uploadBookFields } from '../middleware/upload.middleware';
@@ -22,6 +23,7 @@ router.get('/', optionalAuth, getBooks);
 router.get('/public', optionalAuth, getBooks);
 router.get('/my-uploads', authenticateJwt, getMyUploads);
 router.get('/my/uploads', authenticateJwt, getMyUploads);
+router.get('/upload-status/:clientUploadId', authenticateJwt, getUploadStatus);
 router.get('/:id', optionalAuth, getBookById);
 router.get('/:id/processing-status', optionalAuth, getProcessingStatus);
 router.get('/:id/content', optionalAuth, getBookContent);

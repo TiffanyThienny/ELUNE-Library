@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
 import { BookStatus, Visibility, Role, ReviewAction } from '@prisma/client';
+import { withPresentedCover } from '../utils/coverUrl.util';
 
 export const getStatistics = async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -71,7 +72,7 @@ export const getPendingBooks = async (_req: Request, res: Response): Promise<voi
       orderBy: { createdAt: 'desc' }
     });
 
-    sendSuccess(res, { books: pending }, 'Pending uploads retrieved');
+    sendSuccess(res, { books: pending.map(withPresentedCover) }, 'Pending uploads retrieved');
   } catch (error: any) {
     console.error('getPendingBooks error:', error);
     sendError(res, 'Failed to fetch pending books', error.message, 500);
@@ -108,7 +109,7 @@ export const approveBook = async (req: Request, res: Response): Promise<void> =>
       })
     ]);
 
-    sendSuccess(res, { book: updatedBook, review: reviewRecord }, 'Book approved and published to Explore');
+    sendSuccess(res, { book: withPresentedCover(updatedBook), review: reviewRecord }, 'Book approved and published to Explore');
   } catch (error: any) {
     console.error('approveBook error:', error);
     sendError(res, 'Failed to approve book', error.message, 500);
@@ -147,7 +148,7 @@ export const rejectBook = async (req: Request, res: Response): Promise<void> => 
       })
     ]);
 
-    sendSuccess(res, { book: updatedBook, review: reviewRecord }, 'Book has been rejected with feedback');
+    sendSuccess(res, { book: withPresentedCover(updatedBook), review: reviewRecord }, 'Book has been rejected with feedback');
   } catch (error: any) {
     console.error('rejectBook error:', error);
     sendError(res, 'Failed to reject book', error.message, 500);
@@ -203,7 +204,7 @@ export const reviewBook = async (req: Request, res: Response): Promise<void> => 
 
     sendSuccess(
       res,
-      { book: updatedBook, review: reviewRecord },
+      { book: withPresentedCover(updatedBook), review: reviewRecord },
       `Book has been ${isApproved ? 'approved' : 'rejected'} successfully`
     );
   } catch (error: any) {
@@ -232,7 +233,7 @@ export const toggleBookVisibility = async (req: Request, res: Response): Promise
       }
     });
 
-    sendSuccess(res, { book: updated }, `Book visibility updated to ${newVisibility}`);
+    sendSuccess(res, { book: withPresentedCover(updated) }, `Book visibility updated to ${newVisibility}`);
   } catch (error: any) {
     console.error('toggleBookVisibility error:', error);
     sendError(res, 'Failed to update visibility', error.message, 500);
@@ -258,7 +259,7 @@ export const getAllBooks = async (req: Request, res: Response): Promise<void> =>
       orderBy: { createdAt: 'desc' }
     });
 
-    sendSuccess(res, { books }, 'All books retrieved');
+    sendSuccess(res, { books: books.map(withPresentedCover) }, 'All books retrieved');
   } catch (error: any) {
     console.error('getAllBooks error:', error);
     sendError(res, 'Failed to fetch books', error.message, 500);

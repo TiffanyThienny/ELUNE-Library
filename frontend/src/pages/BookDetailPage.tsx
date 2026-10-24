@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Book, Summary } from '../types';
-import { bookService, libraryService, aiService } from '../services/api';
+import { bookService, libraryService, aiService, resolveAssetUrl } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { Toast, ToastType } from '../components/Toast';
@@ -156,7 +156,7 @@ export const BookDetailPage: React.FC = () => {
         {/* Cover */}
         <div className="w-full sm:w-64 aspect-[3/4] shrink-0 rounded-2xl overflow-hidden bg-[#FAF7F2] border border-[#E8DFD3] shadow-xs">
           {book.coverUrl ? (
-            <img src={book.coverUrl} alt={book.title} className="w-full h-full object-cover" />
+            <img src={resolveAssetUrl(book.coverUrl) || undefined} alt={book.title} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-[#EBDDC8] to-[#D9C8B4] p-6 flex flex-col justify-end text-[#2C2421]">
               <span className="text-xs uppercase tracking-widest text-[#8C7355] font-bold">

@@ -3,8 +3,12 @@
  * Bypasses the 5MB browser localStorage quota limit completely.
  */
 
+import { pdfCacheKey, isCacheRecordUsable, PdfCacheRecord } from './pdfCachePolicy';
+
 const DB_NAME = 'elune_library_db';
-const DB_VERSION = 1;
+// v2: PDF cache is keyed per (user, book). v1 entries were keyed by bookId only
+// and carried no owner, so they are dropped on upgrade.
+const DB_VERSION = 2;
 const STORE_BOOKS = 'books';
 const STORE_FILES = 'pdf_files';
 
@@ -21,11 +25,19 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_BOOKS)) {
         db.createObjectStore(STORE_BOOKS, { keyPath: 'id' });
       }
+      if (db.objectStoreNames.contains(STORE_FILES)) {
+        const existing = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_FILES);
+        if (!existing || existing.keyPath !== 'cacheKey') {
+          db.deleteObjectStore(STORE_FILES);
+        }
+      }
       if (!db.objectStoreNames.contains(STORE_FILES)) {
-        db.createObjectStore(STORE_FILES, { keyPath: 'bookId' });
+        db.createObjectStore(STORE_FILES, { keyPath: 'cacheKey' });
       }
     };
 
+    // Another tab still holds the v1 database open: fail soft (no cache) instead of hanging.
+    request.onblocked = () => reject(new Error('IndexedDB upgrade blocked by another open tab'));
     request.onsuccess = (event: any) => resolve(event.target.result);
     request.onerror = (event: any) => reject(event.target.error);
   });
@@ -62,13 +74,20 @@ export async function getLocalBook(bookId: string): Promise<any | null> {
   }
 }
 
-export async function saveLocalPdfFile(bookId: string, file: Blob | ArrayBuffer): Promise<void> {
+/** Cache a PDF for one (user, book). Without a logged-in user nothing is cached. */
+export async function saveLocalPdfFile(
+  bookId: string,
+  file: Blob | ArrayBuffer,
+  userId: string | null | undefined
+): Promise<void> {
+  if (!userId || !bookId) return;
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORE_FILES], 'readwrite');
       const store = tx.objectStore(STORE_FILES);
-      store.put({ bookId, data: file, timestamp: Date.now() });
+      const record: PdfCacheRecord = { cacheKey: pdfCacheKey(userId, bookId), userId, bookId, data: file, timestamp: Date.now() };
+      store.put(record);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -77,14 +96,20 @@ export async function saveLocalPdfFile(bookId: string, file: Blob | ArrayBuffer)
   }
 }
 
-export async function getLocalPdfFile(bookId: string): Promise<Blob | ArrayBuffer | null> {
+/** Cached PDF for exactly this (user, book), or null. Never falls back to another book. */
+export async function getLocalPdfFile(
+  bookId: string,
+  userId: string | null | undefined
+): Promise<Blob | ArrayBuffer | null> {
+  if (!userId || !bookId) return null;
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORE_FILES], 'readonly');
       const store = tx.objectStore(STORE_FILES);
-      const req = store.get(bookId);
-      req.onsuccess = () => resolve(req.result ? req.result.data : null);
+      const req = store.get(pdfCacheKey(userId, bookId));
+      req.onsuccess = () =>
+        resolve(isCacheRecordUsable(req.result, userId, bookId) ? (req.result.data as Blob | ArrayBuffer) : null);
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
@@ -93,26 +118,34 @@ export async function getLocalPdfFile(bookId: string): Promise<Blob | ArrayBuffe
   }
 }
 
-export async function getLatestLocalPdfFile(): Promise<Blob | ArrayBuffer | null> {
+/** Remove the cached PDF for one (user, book), e.g. after the server denied access. */
+export async function removeLocalPdfFile(bookId: string, userId: string | null | undefined): Promise<void> {
+  if (!userId || !bookId) return;
   try {
     const db = await openDB();
     return new Promise((resolve) => {
-      const tx = db.transaction([STORE_FILES], 'readonly');
-      const store = tx.objectStore(STORE_FILES);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const results = req.result;
-        if (results && results.length > 0) {
-          results.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
-          resolve(results[0].data);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
+      const tx = db.transaction([STORE_FILES], 'readwrite');
+      tx.objectStore(STORE_FILES).delete(pdfCacheKey(userId, bookId));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
     });
   } catch (err) {
-    return null;
+    console.warn('Failed to remove PDF blob from IndexedDB:', err);
+  }
+}
+
+/** Drop every cached PDF on this device (called on logout / forced 401 sign-out). */
+export async function clearLocalPdfCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction([STORE_FILES], 'readwrite');
+      tx.objectStore(STORE_FILES).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch (err) {
+    console.warn('Failed to clear PDF cache:', err);
   }
 }
 

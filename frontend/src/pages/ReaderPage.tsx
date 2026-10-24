@@ -42,6 +42,7 @@ export const ReaderPage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'notes' | 'summary' | 'chat'>('chat');
   const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl'>('normal');
+  const [readerMode, setReaderMode] = useState<'text' | 'pdf'>('text');
 
   // Load book data
   useEffect(() => {
@@ -65,6 +66,21 @@ export const ReaderPage: React.FC = () => {
       }, 500);
     }
   }, [searchParams, currentChapter]);
+
+  // Choose text vs visual-PDF mode whenever the loaded book/chapter changes.
+  // Declared here (before any early return) so hook order stays stable.
+  useEffect(() => {
+    const blocks = currentChapter?.contentBlocks || [];
+    const hasText = blocks.length > 0 && blocks.some((b) => (b.text || '').trim().length > 15);
+    const scannedOrEmpty = Boolean(
+      book?.isScanned ||
+      book?.processingStatus === 'FAILED' ||
+      chapters.length === 0 ||
+      !currentChapter ||
+      blocks.length === 0
+    );
+    setReaderMode(scannedOrEmpty && !hasText ? 'pdf' : 'text');
+  }, [book?.id, book?.isScanned, book?.processingStatus, chapters.length, currentChapter?.id]);
 
 
 
@@ -137,16 +153,6 @@ export const ReaderPage: React.FC = () => {
     currentChapter.contentBlocks.length === 0 ||
     (isDummyBlock && !hasValidTextBlocks)
   );
-
-  const [readerMode, setReaderMode] = useState<'text' | 'pdf'>('text');
-
-  useEffect(() => {
-    if ((isScannedDocument || isDummyBlock) && !hasValidTextBlocks) {
-      setReaderMode('pdf');
-    } else {
-      setReaderMode('text');
-    }
-  }, [isScannedDocument, isDummyBlock, hasValidTextBlocks]);
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex flex-col">

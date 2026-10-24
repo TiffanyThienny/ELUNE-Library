@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
+import { summaryTextFromResponse } from '../utils/aiResponse';
 import { FileText, BookOpen, Layers, RefreshCw } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 
@@ -18,8 +19,11 @@ export const SummaryPanel: React.FC = () => {
     setSummaryType('CHAPTER');
     try {
       const res = await aiService.summarizeChapter(currentChapter.id);
-      if (res.success && res.data?.summary) {
-        setSummary(res.data.summary.content);
+      const text = res.success ? summaryTextFromResponse(res.data) : null;
+      if (text) {
+        setSummary(text);
+      } else {
+        setError('The server returned no chapter summary.');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to generate chapter summary');
@@ -35,8 +39,11 @@ export const SummaryPanel: React.FC = () => {
     setSummaryType('BOOK');
     try {
       const res = await aiService.summarizeBook(book.id);
-      if (res.success && res.data?.summary) {
-        setSummary(res.data.summary.content);
+      const text = res.success ? summaryTextFromResponse(res.data) : null;
+      if (text) {
+        setSummary(text);
+      } else {
+        setError('The server returned no book summary.');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to generate book summary');

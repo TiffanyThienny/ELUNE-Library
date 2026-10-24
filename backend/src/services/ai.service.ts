@@ -29,7 +29,9 @@ export interface MindMapNode {
 
 export class AIService {
   private genAI: GoogleGenerativeAI | null = null;
-  private modelName = 'gemini-1.5-flash';
+  // gemini-1.5-flash is retired (404). Configurable so the model can follow Google's
+  // deprecation schedule without a code change: https://ai.google.dev/gemini-api/docs/deprecations
+  private modelName = ENV.GEMINI_MODEL;
 
   constructor() {
     if (ENV.GEMINI_API_KEY && ENV.GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY') {
@@ -209,24 +211,10 @@ ${chapterText.slice(0, 5000)}`;
         result = JSON.parse(jsonStr);
       } catch (err) {
         console.warn('Gemini chapter summary failed, using content fallback:', err);
-        result = {
-          summary: `In Chapter ${chapter.chapterNumber}, ${chapter.book.author} examines foundational principles regarding "${chapter.title}".`,
-          keyPoints: [
-            `Core principle articulated in Chapter ${chapter.chapterNumber}`,
-            `Practical implication of ${chapter.title}`,
-            'Key reflection for peaceful contemplation'
-          ]
-        };
+        result = extractiveChapterSummary(chapter.contentBlocks.map((b) => b.text));
       }
     } else {
-      result = {
-        summary: `In Chapter ${chapter.chapterNumber}, ${chapter.book.author} examines foundational principles regarding "${chapter.title}".`,
-        keyPoints: [
-          `Core principle articulated in Chapter ${chapter.chapterNumber}`,
-          `Practical implication of ${chapter.title}`,
-          'Key reflection for peaceful contemplation'
-        ]
-      };
+      result = extractiveChapterSummary(chapter.contentBlocks.map((b) => b.text));
     }
 
     // Cache to DB
@@ -479,74 +467,111 @@ Return ONLY valid JSON matching this exact structure:
     };
   }
 
-  private createFallbackBookSummary(book: any): GeneratedSummary {
+  /**
+   * Non-AI fallback (no Gemini key, or Gemini failed): an EXTRACTIVE summary
+   * built only from this book's own text, so it never describes another book.
+   */
+  private createFallbackBookSummary(book: any): GeneratedSummary & { source: 'extractive-fallback' } {
+    const chapters: any[] = book.chapters || [];
+    const chapterTexts = chapters.map((c) => ({
+      title: c.title as string,
+      text: (c.contentBlocks || []).map((b: any) => b.text).join(' ')
+    }));
+    const allText = chapterTexts.map((c) => c.text).join(' ');
+    const overviewSentences = firstSentences(allText, 2);
     return {
-      quickOverview: book.description || `An inspiring exploration of ${book.title} written by ${book.author}.`,
-      mainIdeas: [
-        `Our perspective shapes our subjective experience, as emphasized by ${book.author}.`,
-        'Disciplined reflection and deliberate contemplation cultivate long-term clarity.',
-        'Continuous learning and inner stillness guard against modern distractions.'
-      ],
-      keyTakeaways: [
-        'Focus on internal habits rather than outside turmoil.',
-        'Carve out daily quiet time to integrate new knowledge.',
-        'Small consistent reading habits yield profound intellectual compounding.'
-      ],
-      importantConcepts: [
-        {
-          title: 'Deliberate Contemplation',
-          explanation: 'Taking time to pause and reflect on concepts rather than passively skimming text.'
-        },
-        {
-          title: 'Inner Sanctuary',
-          explanation: 'A tranquil state of mind impervious to sudden chaos or noise.'
-        }
-      ]
+      source: 'extractive-fallback',
+      quickOverview:
+        overviewSentences ||
+        book.description ||
+        `"${book.title}" by ${book.author}.`,
+      mainIdeas: chapterTexts
+        .slice(0, 5)
+        .map((c) => `${c.title}: ${firstSentences(c.text, 1) || 'No readable text in this chapter.'}`),
+      keyTakeaways: chapterTexts
+        .map((c) => firstSentences(c.text, 1))
+        .filter(Boolean)
+        .slice(1, 4),
+      importantConcepts: chapterTexts.slice(0, 3).map((c) => ({
+        title: c.title,
+        explanation: truncateWords(c.text, 40) || 'No readable text in this chapter.'
+      }))
     };
   }
 
-  private generateFallbackAnswer(book: any, question: string, context: string): string {
-    const qLower = question.toLowerCase();
-    if (qLower.includes('main idea') || qLower.includes('about') || qLower.includes('summary')) {
-      return `In "${book.title}", ${book.author} centers on cultivating emotional clarity, discipline, and understanding life's core priorities. Based on the book, our internal choices and intentional calm define the quality of our actions.`;
+  /** Non-AI fallback answer: quotes the retrieved passages of THIS book only. */
+  private generateFallbackAnswer(book: any, _question: string, context: string): string {
+    const passage = (context || '').replace(/\s+/g, ' ').trim();
+    if (passage.length > 0) {
+      return `AI is not configured, so this is the most relevant passage from "${book.title}" rather than a generated answer:\n\n"${truncateWords(passage, 80)}"`;
     }
-    if (qLower.includes('chapter 1') || qLower.includes('first') || qLower.includes('morning')) {
-      return `In "${book.title}", Chapter 1 sets forth the essential Stoic morning reflection: remembering that we will meet meddling and hurried people, yet resolving not to allow external friction to taint our calm and common humanity.`;
-    }
-    if (context && context.length > 50) {
-      return `Based on the text of "${book.title}": ${context.slice(0, 300).trim()}...\n\nAs ${book.author} notes, applying these reflections allows the reader to maintain focus and composure.`;
-    }
-    return `In "${book.title}", ${book.author} notes that wisdom comes from deliberate reflection upon our natural duties and inner peace. However, specific details regarding this query are not explicitly elaborated in this section of the text.`;
+    return `The answer could not be found in "${book.title}".`;
   }
 
+  /** Non-AI fallback flashcards built from this book's own chapters (no invented content). */
   private generateFallbackFlashcards(book: any): GeneratedFlashcard[] {
-    return [
-      {
-        question: `What is the central philosophical stance presented in "${book.title}"?`,
-        answer: `Self-mastery and internal reason are within our control, whereas external circumstances must be accepted with calm equanimity.`
-      },
-      {
-        question: `How does ${book.author} recommend dealing with daily disruptions?`,
-        answer: `By retreating inward to one's own reasoned judgment and treating obstacles as material for practicing virtue.`
-      }
-    ];
+    return (book.chapters || [])
+      .map((c: any) => ({
+        title: c.title as string,
+        text: (c.contentBlocks || []).map((b: any) => b.text).join(' ')
+      }))
+      .filter((c: any) => c.text.trim().length > 0)
+      .slice(0, 5)
+      .map((c: any) => ({
+        question: `What does "${c.title}" in "${book.title}" open with?`,
+        answer: firstSentences(c.text, 2)
+      }));
   }
 
+  /**
+   * Non-AI fallback quiz: "which chapter contains this passage?" using this
+   * book's own chapter titles. Needs at least two chapters with text; otherwise
+   * no quiz is produced rather than inventing questions.
+   */
   private generateFallbackQuiz(book: any): GeneratedQuiz[] {
-    return [
-      {
-        question: `According to ${book.author}, what is the only thing truly within an individual's control?`,
-        options: [
-          'External outcomes and reputation',
-          'Internal thoughts, judgments, and choices',
-          'The actions and opinions of others',
-          'Material prosperity'
-        ],
-        correctAnswer: 'Internal thoughts, judgments, and choices',
-        explanation: `${book.author} emphasizes that only our own opinions, impulses, and responses are under our direct command.`
-      }
-    ];
+    const chapters = (book.chapters || [])
+      .map((c: any) => ({
+        title: c.title as string,
+        text: (c.contentBlocks || []).map((b: any) => b.text).join(' ')
+      }))
+      .filter((c: any) => c.text.trim().length > 0);
+    const titles: string[] = Array.from(new Set<string>(chapters.map((c: any) => c.title)));
+    if (titles.length < 2) return [];
+    return chapters.slice(0, 4).map((c: any, idx: number) => {
+      const distractors = titles.filter((t) => t !== c.title).slice(0, 3);
+      const options = [...distractors];
+      options.splice(idx % (distractors.length + 1), 0, c.title);
+      return {
+        question: `Which section of "${book.title}" contains this passage: "${truncateWords(firstSentences(c.text, 1), 30)}"?`,
+        options,
+        correctAnswer: c.title,
+        explanation: `The passage is taken from "${c.title}".`
+      };
+    });
   }
+}
+
+/** Non-AI chapter summary: the chapter's own opening sentences and paragraph leads. */
+function extractiveChapterSummary(paragraphs: string[]): { summary: string; keyPoints: string[]; source: 'extractive-fallback' } {
+  const nonEmpty = paragraphs.filter((p) => (p || '').trim().length > 0);
+  return {
+    source: 'extractive-fallback',
+    summary: firstSentences(nonEmpty.join(' '), 3),
+    keyPoints: nonEmpty.slice(1, 4).map((p) => firstSentences(p, 1))
+  };
+}
+
+/** First `n` sentences of a text (used by the extractive, non-AI fallbacks). */
+function firstSentences(text: string, n: number): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const sentences = clean.match(/[^.!?]+[.!?]+(\s|$)/g) || [clean];
+  return truncateWords(sentences.slice(0, n).join(' ').trim(), 60);
+}
+
+function truncateWords(text: string, maxWords: number): string {
+  const words = (text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  return words.length > maxWords ? `${words.slice(0, maxWords).join(' ')}…` : words.join(' ');
 }
 
 export const aiService = new AIService();

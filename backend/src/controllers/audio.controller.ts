@@ -1,10 +1,25 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { ensureBookAccess } from '../utils/bookAccess.util';
 
 export const getChapterAudio = async (req: Request, res: Response): Promise<void> => {
   try {
     const { bookId, chapterId } = req.params;
+
+    // Segments include paragraph text snippets, so enforce book access first.
+    if (!(await ensureBookAccess(req, res, bookId))) return;
+
+    // The chapter must belong to the requested book; otherwise a public bookId
+    // could be paired with a private chapterId to read its content.
+    const owningChapter = await prisma.chapter.findUnique({
+      where: { id: chapterId },
+      select: { id: true, bookId: true }
+    });
+    if (!owningChapter || owningChapter.bookId !== bookId) {
+      sendError(res, 'Chapter not found', 'NOT_FOUND', 404);
+      return;
+    }
 
     let track = await prisma.audioTrack.findFirst({
       where: { bookId, chapterId },

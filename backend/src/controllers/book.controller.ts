@@ -4,10 +4,13 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { ENV } from '../config/env';
 import { storageService } from '../services/storage.service';
-import { documentService } from '../services/document.service';
+import { documentService, describeTextlessPdf } from '../services/document.service';
+import { EPUB_UNSUPPORTED_MESSAGE } from '../middleware/upload.middleware';
 import { sendSuccess, sendError } from '../utils/response.util';
 import { Visibility, BookStatus, BlockType, ProcessingStatus } from '@prisma/client';
 import { canUserAccessBook, resolveBookUploadStatus } from '../utils/permission.util';
+import { presentCoverUrl } from '../utils/coverUrl.util';
+import { uploadIdempotency, isValidClientUploadId } from '../services/uploadIdempotency.service';
 
 export const formatBookForResponse = (book: any, progress?: any) => {
   let parsedSummary = {
@@ -46,7 +49,7 @@ export const formatBookForResponse = (book: any, progress?: any) => {
     categoryId: book.categoryId,
     coverBg: book.coverBg || 'linear-gradient(135deg, #8C7355 0%, #4A3E3D 100%)',
     coverTextColor: book.coverTextColor || '#FAF0E6',
-    coverUrl: book.coverUrl,
+    coverUrl: presentCoverUrl(book),
     fileUrl: book.fileUrl,
     fileType: book.fileType,
     totalPages: book.totalPages || 100,
@@ -273,7 +276,12 @@ export const getBookFile = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    res.sendFile(path.resolve(filePath));
+    // Authorized content must not be stored by shared caches. sendFile handles
+    // HTTP Range (206) for pdf.js incremental loading.
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.sendFile(path.resolve(filePath), {
+      headers: path.extname(filename).toLowerCase() === '.pdf' ? { 'Content-Type': 'application/pdf' } : undefined
+    });
   } catch (error: any) {
     console.error('getBookFile error:', error);
     sendError(res, 'Failed to serve book file', error.message, 500);
@@ -310,7 +318,7 @@ export const getMyUploads = async (req: Request, res: Response): Promise<void> =
       categoryId: b.categoryId,
       coverBg: b.coverBg,
       coverTextColor: b.coverTextColor,
-      coverUrl: b.coverUrl,
+      coverUrl: presentCoverUrl(b),
       fileUrl: b.fileUrl,
       fileType: b.fileType,
       totalPages: b.totalPages,
@@ -333,7 +341,113 @@ export const getMyUploads = async (req: Request, res: Response): Promise<void> =
 /**
  * Upload Book (Handles file, text extraction, paragraph/content blocks, and PRIVATE/PUBLIC status)
  */
+/**
+ * Remove a locally stored upload referenced by a "/uploads/<name>" URL.
+ * Only multer-generated names ("book-...") inside UPLOAD_DIR are touched, so
+ * seed/external URLs and path-traversal values are ignored.
+ */
+const removeStoredUpload = async (url?: string | null): Promise<void> => {
+  if (!url || !url.startsWith('/uploads/')) return;
+  const filename = path.basename(url);
+  if (!filename.startsWith('book-')) return;
+  try {
+    // Never delete a file another record still references.
+    const stillReferenced = await prisma.book.count({
+      where: { OR: [{ fileUrl: url }, { coverUrl: url }] }
+    });
+    if (stillReferenced > 0) {
+      console.warn(`Kept ${filename}: still referenced by ${stillReferenced} other book(s).`);
+      return;
+    }
+    await storageService.deleteFile(filename);
+  } catch (err) {
+    console.warn(`Failed to remove stored upload ${filename}:`, err);
+  }
+};
+
+/** Only absolute https cover URLs supplied by the client are kept; everything else is dropped. */
+const sanitizeClientCoverUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'https:' ? u.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Check real image magic bytes (PNG, JPEG, GIF, WEBP); the extension alone is not trusted. */
+const hasImageSignature = async (filePath: string): Promise<boolean> => {
+  let handle: fs.promises.FileHandle | null = null;
+  try {
+    handle = await fs.promises.open(filePath, 'r');
+    const buf = Buffer.alloc(12);
+    const { bytesRead } = await handle.read(buf, 0, 12, 0);
+    if (bytesRead < 4) return false;
+    const isPng = buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const isJpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    const head6 = buf.subarray(0, 6).toString('latin1');
+    const isGif = head6 === 'GIF87a' || head6 === 'GIF89a';
+    const isWebp = buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP';
+    return isPng || isJpeg || isGif || isWebp;
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+};
+
+const requestUploadPaths = (req: Request): string[] => {
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] } | Express.Multer.File[] | undefined;
+  return [
+    ...(req.file ? [req.file] : []),
+    ...(Array.isArray(files) ? files : Object.values(files || {}).flat())
+  ]
+    .map((f) => f?.path)
+    .filter((p): p is string => Boolean(p));
+};
+
+/** Synchronous variant used right before an error response is sent (at most 3 small unlinks). */
+const discardRequestUploadsSync = (req: Request): void => {
+  for (const p of requestUploadPaths(req)) {
+    try {
+      fs.rmSync(p, { force: true });
+    } catch (err) {
+      console.warn(`Failed to discard rejected upload ${p}:`, err);
+    }
+  }
+};
+
+/** Delete every file multer wrote for this request (used when an upload is rejected). */
+const discardRequestUploads = async (req: Request): Promise<void> => {
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] } | Express.Multer.File[] | undefined;
+  const list: Express.Multer.File[] = [
+    ...(req.file ? [req.file] : []),
+    ...(Array.isArray(files) ? files : Object.values(files || {}).flat())
+  ];
+  for (const f of list) {
+    if (!f?.path) continue;
+    try {
+      await fs.promises.unlink(f.path);
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') console.warn(`Failed to discard rejected upload ${f.path}:`, err);
+    }
+  }
+};
+
 export const uploadBook = async (req: Request, res: Response): Promise<void> => {
+  // Set once the Book row referencing the uploaded files is persisted; until
+  // then any exit path (validation error, parse failure, exception) discards them.
+  let bookPersisted = false;
+  let persistedBookId: string | null = null;
+  let idempotencyKey: string | null = null;
+  // Remove rejected uploads BEFORE the response is flushed, so no client ever
+  // observes an orphan file (the async cleanup in `finally` stays as a backstop).
+  const originalJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (!bookPersisted) discardRequestUploadsSync(req);
+    return originalJson(body);
+  }) as typeof res.json;
   try {
     if (!req.user) {
       sendError(res, 'Authentication required to upload books', 'UNAUTHORIZED', 401);
@@ -343,13 +457,49 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
     const file = req.file || files?.['file']?.[0];
     if (!file) {
-      sendError(res, 'No book file uploaded. Please upload a PDF, EPUB, or TXT file.', 'FILE_REQUIRED', 400);
+      sendError(res, 'No book file uploaded. Please upload a PDF, TXT, or MD file.', 'FILE_REQUIRED', 400);
       return;
+    }
+
+    // Idempotent retries: the same clientUploadId never creates a second book.
+    if (isValidClientUploadId(req.body.clientUploadId)) {
+      const attempt = uploadIdempotency.begin(req.user.id, req.body.clientUploadId);
+      if (attempt.state === 'processing') {
+        sendError(
+          res,
+          'This upload is still being processed. Check your library in a moment instead of uploading again.',
+          'UPLOAD_IN_PROGRESS',
+          409
+        );
+        return;
+      }
+      if (attempt.state === 'completed') {
+        const existingBook = await prisma.book.findUnique({
+          where: { id: attempt.bookId },
+          include: { category: true, chapters: { include: { contentBlocks: { orderBy: { blockIndex: 'asc' } } } } }
+        });
+        if (existingBook && existingBook.uploadedBy === req.user.id) {
+          const formattedExisting = formatBookForResponse(existingBook);
+          sendSuccess(res, { book: formattedExisting, ...formattedExisting, deduplicated: true }, 'This upload was already completed.', 200);
+          return;
+        }
+        // The earlier book was deleted: start a fresh attempt.
+        uploadIdempotency.reset(req.user.id, req.body.clientUploadId);
+        uploadIdempotency.begin(req.user.id, req.body.clientUploadId);
+      }
+      idempotencyKey = req.body.clientUploadId;
     }
 
     // Handle uploaded cover image if provided
     const coverFile = files?.['cover']?.[0] || files?.['coverImage']?.[0];
-    let coverUrl: string | null = req.body.coverUrl || null;
+    // A client-supplied coverUrl is accepted only as an absolute https URL. Local
+    // "/uploads/..." paths are never trusted: they could point at another user's
+    // private cover (bypassing the cover policy) or make a later delete unlink it.
+    let coverUrl: string | null = sanitizeClientCoverUrl(req.body.coverUrl);
+    if (coverFile && !(await hasImageSignature(coverFile.path))) {
+      sendError(res, 'The cover file is not a valid JPG, PNG, WEBP, or GIF image.', 'INVALID_COVER', 400);
+      return;
+    }
     if (coverFile) {
       try {
         const uploadedCover = await storageService.uploadFile(coverFile);
@@ -359,16 +509,20 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    // Validate file extension
+    // Validate file extension (defence in depth; the multer filter already enforces this)
     const ext = file.originalname.split('.').pop()?.toUpperCase() || '';
-    if (!['PDF', 'EPUB', 'TXT', 'MD'].includes(ext)) {
-      sendError(res, 'Unsupported file type. Please upload a valid PDF, EPUB, or TXT document.', 'UNSUPPORTED_TYPE', 400);
+    if (ext === 'EPUB') {
+      sendError(res, EPUB_UNSUPPORTED_MESSAGE, 'UNSUPPORTED_FORMAT', 415);
+      return;
+    }
+    if (!['PDF', 'TXT', 'MD'].includes(ext)) {
+      sendError(res, 'Unsupported file type. Please upload a PDF, TXT, or MD document.', 'UNSUPPORTED_TYPE', 400);
       return;
     }
 
-    // Validate file size (max 50MB)
-    if (file.size > 50 * 1024 * 1024) {
-      sendError(res, 'File size exceeds maximum allowable limit of 50MB.', 'FILE_TOO_LARGE', 400);
+    // Validate file size (defence in depth; multer enforces the same configured limit)
+    if (file.size > ENV.MAX_FILE_SIZE_MB * 1024 * 1024) {
+      sendError(res, `File size exceeds maximum allowable limit of ${ENV.MAX_FILE_SIZE_MB}MB.`, 'FILE_TOO_LARGE', 400);
       return;
     }
 
@@ -376,10 +530,8 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
     try {
       if (ext === 'PDF') {
         extracted = await documentService.parsePdf(file.path, file.originalname);
-      } else if (ext === 'TXT' || ext === 'MD') {
-        extracted = await documentService.parsePlainText(file.path, file.originalname);
       } else {
-        extracted = await documentService.parseEpub(file.path, file.originalname);
+        extracted = await documentService.parsePlainText(file.path, file.originalname);
       }
     } catch (parseError: any) {
       console.error('Server document parsing failed, checking client extracted chapters:', parseError);
@@ -459,9 +611,7 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
 
     const isScanned = Boolean(extracted.isScannedOrEmpty);
     const processingStatus = isScanned ? ProcessingStatus.FAILED : ProcessingStatus.READY;
-    const processingError = isScanned
-      ? 'This PDF contains scanned pages and does not have selectable text.'
-      : null;
+    const processingError = isScanned ? describeTextlessPdf(extracted.noTextReason) : null;
 
     // Save Book along with structured Chapters and ContentBlocks
     const book = await prisma.book.create({
@@ -514,6 +664,9 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         },
       },
     });
+    bookPersisted = true;
+    persistedBookId = book.id;
+    if (idempotencyKey) uploadIdempotency.complete(req.user.id, idempotencyKey, book.id);
 
     // Create synchronized AudioTracks and AudioSegments only if book has valid extracted content
     if (!isScanned && book.chapters.length > 0) {
@@ -557,20 +710,29 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    // Auto-add to user's library
-    await prisma.userBook.upsert({
-      where: {
-        userId_bookId: {
+    // Auto-add to user's library. The book and its file are already persisted, so a
+    // failure here must NOT turn the upload into an error (the client would retry and
+    // the user would think the book was lost). GET /api/library re-links every book
+    // the user uploaded, so a missed link self-heals on the next library load.
+    let libraryLinked = true;
+    try {
+      await prisma.userBook.upsert({
+        where: {
+          userId_bookId: {
+            userId: req.user.id,
+            bookId: book.id,
+          },
+        },
+        update: {},
+        create: {
           userId: req.user.id,
           bookId: book.id,
         },
-      },
-      update: {},
-      create: {
-        userId: req.user.id,
-        bookId: book.id,
-      },
-    });
+      });
+    } catch (linkErr) {
+      libraryLinked = false;
+      console.error(`[UPLOAD] Book ${book.id} saved, but adding it to the user's library failed:`, linkErr);
+    }
 
     console.log(`[BOOK READY] Volume "${book.title}" [ID: ${book.id}] status=${processingStatus}, isScanned=${isScanned}`);
 
@@ -581,10 +743,69 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
         : 'Upload successful. Your private volume is ready in your personal sanctuary.';
 
     const formattedBook = formatBookForResponse(book);
-    sendSuccess(res, { book: formattedBook, ...formattedBook }, message, 201);
+    sendSuccess(
+      res,
+      { book: formattedBook, ...formattedBook, libraryLinked },
+      libraryLinked ? message : `${message} It will appear in your library shortly.`,
+      201
+    );
   } catch (error: any) {
+    // Full details stay in the server log; the client never sees internal messages,
+    // file paths or stack traces.
     console.error('uploadBook error:', error);
-    sendError(res, 'Failed to process and upload book', error.message, 500);
+    if (bookPersisted && persistedBookId) {
+      // The book and file exist: report that truthfully instead of "upload failed".
+      sendSuccess(
+        res,
+        { book: { id: persistedBookId }, partial: true },
+        'Your book was saved, but the server could not finish preparing it. Open it from your library.',
+        201
+      );
+    } else {
+      sendError(res, 'The upload could not be saved. Please try again.', 'UPLOAD_FAILED', 500);
+    }
+  } finally {
+    if (!bookPersisted) {
+      if (idempotencyKey && req.user) uploadIdempotency.fail(req.user.id, idempotencyKey);
+      await discardRequestUploads(req);
+    }
+  }
+};
+
+/**
+ * Status of an upload attempt identified by its clientUploadId. Lets the client
+ * reconcile after a client-side timeout instead of re-uploading (which could
+ * create a duplicate book).
+ */
+export const getUploadStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
+      return;
+    }
+    const { clientUploadId } = req.params;
+    if (!isValidClientUploadId(clientUploadId)) {
+      sendError(res, 'Invalid upload id', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    const entry = uploadIdempotency.get(req.user.id, clientUploadId);
+    if (!entry) {
+      sendSuccess(res, { status: 'unknown' }, 'No record of this upload attempt');
+      return;
+    }
+    if (entry.status === 'completed' && entry.bookId) {
+      const book = await prisma.book.findUnique({ where: { id: entry.bookId }, include: { category: true } });
+      if (book && book.uploadedBy === req.user.id) {
+        sendSuccess(res, { status: 'completed', book: formatBookForResponse(book) }, 'Upload completed');
+        return;
+      }
+      sendSuccess(res, { status: 'unknown' }, 'The uploaded book no longer exists');
+      return;
+    }
+    sendSuccess(res, { status: entry.status }, `Upload ${entry.status}`);
+  } catch (error: any) {
+    console.error('getUploadStatus error:', error);
+    sendError(res, 'Failed to fetch upload status', error.message, 500);
   }
 };
 
@@ -917,6 +1138,11 @@ export const deleteBook = async (req: Request, res: Response): Promise<void> => 
     }
 
     await prisma.book.delete({ where: { id } });
+
+    // Remove the stored document and uploaded cover only after the DB row is gone.
+    await removeStoredUpload(existing.fileUrl);
+    await removeStoredUpload(existing.coverUrl);
+
     sendSuccess(res, { id }, 'Book deleted successfully');
   } catch (error: any) {
     console.error('deleteBook error:', error);

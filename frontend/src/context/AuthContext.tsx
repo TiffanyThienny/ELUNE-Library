@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { authService } from '../services/api';
+import { clearLocalPdfCache } from '../utils/localBookStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -71,6 +72,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     authService.logout().catch(() => {});
+    // Cached PDFs may contain private books; never leave them for the next person on this device.
+    void clearLocalPdfCache();
     setUser(null);
     setToken(null);
     localStorage.removeItem('elune_token');

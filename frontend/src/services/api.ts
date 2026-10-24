@@ -1,6 +1,20 @@
 import { handleFallbackRequest } from './mockFallback';
+import { clearLocalPdfCache } from '../utils/localBookStorage';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+/**
+ * Whether the offline/mock fallback is allowed. The mock returns fake data and
+ * writes to localStorage, which must NEVER masquerade as real persistence when
+ * a real backend is configured. We disable it whenever an explicit VITE_API_URL
+ * is provided, or when VITE_DISABLE_MOCK is set. This keeps the database as the
+ * single source of truth and surfaces real errors instead of silent fake success.
+ */
+const MOCK_FALLBACK_ENABLED =
+  import.meta.env.VITE_DISABLE_MOCK !== 'true' && !import.meta.env.VITE_API_URL;
+
+/** True only in the explicit offline demo mode (no VITE_API_URL). Real-backend mode never uses mock data. */
+export const IS_DEMO_MOCK_MODE = MOCK_FALLBACK_ENABLED;
 
 /**
  * Resolve a possibly-relative asset path (e.g. "/uploads/book-123.pdf")
@@ -25,14 +39,14 @@ class ApiClient {
     return headers;
   }
 
-  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async request<T>(endpoint: string, options: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
     const isHttpsOrigin = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const isLocalApi = API_BASE_URL.startsWith('http://localhost') || API_BASE_URL.startsWith('http://127.0.0.1');
 
     // If running on HTTPS (e.g. Vercel) and API URL is HTTP localhost,
     // browsers block this as Mixed Content / Private Network Access.
     // Instead of letting fetch hang indefinitely, immediately use fallback:
-    if (isHttpsOrigin && isLocalApi) {
+    if (isHttpsOrigin && isLocalApi && MOCK_FALLBACK_ENABLED) {
       return handleFallbackRequest<T>(endpoint, options);
     }
 
@@ -42,12 +56,14 @@ class ApiClient {
     // Add AbortController timeout to prevent hanging connections
     const controller = new AbortController();
     const isUpload = options.body instanceof FormData;
-    const timeoutMs = isUpload ? 15000 : 6000;
+    const { timeoutMs: requestedTimeoutMs, ...fetchOptions } = options;
+    // Uploads pass a size-aware timeout (see utils/uploadReliability.ts).
+    const timeoutMs = requestedTimeoutMs ?? (isUpload ? 60000 : 6000);
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {
-        ...options,
+        ...fetchOptions,
         signal: controller.signal,
         headers: {
           ...headers,
@@ -63,8 +79,14 @@ class ApiClient {
         if (response.status === 401) {
           localStorage.removeItem('elune_token');
           localStorage.removeItem('elune_user');
+          // Session invalidated: drop cached private PDFs too.
+          void clearLocalPdfCache();
         }
-        throw new Error(data.message || data.error || `HTTP ${response.status}`);
+        // Keep the HTTP status and server error code so callers can react precisely.
+        throw Object.assign(new Error(data.message || data.error || `HTTP ${response.status}`), {
+          status: response.status,
+          code: typeof data.error === 'string' ? data.error : undefined,
+        });
       }
 
       return data;
@@ -83,7 +105,21 @@ class ApiClient {
         throw err;
       }
 
-      // Network unreachable or timed out (e.g. on Vercel preview without external backend URL)
+      // Network unreachable or timed out.
+      // Only fall back to local mock storage when it is explicitly allowed
+      // (no real backend configured). Otherwise surface the real error so the
+      // UI never shows fake success or silently substitutes hardcoded data.
+      if (!MOCK_FALLBACK_ENABLED) {
+        const isTimeout = err.name === 'AbortError' || (err.message || '').includes('aborted');
+        throw Object.assign(
+          new Error(
+            isTimeout
+              ? 'The server took too long to respond. Please check your connection and try again.'
+              : 'Unable to reach the server. Please check your connection and try again.'
+          ),
+          { code: isTimeout ? 'CLIENT_TIMEOUT' : 'NETWORK_ERROR' }
+        );
+      }
       console.warn(`API unreachable or timed out (${url}), utilizing client sanctuary storage.`);
       return handleFallbackRequest<T>(endpoint, options);
     }
@@ -143,8 +179,18 @@ export const bookService = {
   getById: (bookId: string) =>
     api.get<{ success: boolean; data: { book: any } }>(`/api/books/${bookId}`),
 
-  upload: (formData: FormData) =>
-    api.post<{ success: boolean; data: { book: any }; message: string }>('/api/books/upload', formData),
+  upload: (formData: FormData, opts: { timeoutMs?: number } = {}) =>
+    api.request<{ success: boolean; data: { book: any; deduplicated?: boolean }; message: string }>('/api/books/upload', {
+      method: 'POST',
+      body: formData,
+      timeoutMs: opts.timeoutMs,
+    }),
+
+  /** Server-side state of an upload attempt (owner-scoped); used to reconcile after a timeout. */
+  getUploadStatus: (clientUploadId: string) =>
+    api.get<{ success: boolean; data: { status: 'completed' | 'processing' | 'failed' | 'unknown'; book?: any } }>(
+      `/api/books/upload-status/${encodeURIComponent(clientUploadId)}`
+    ),
 
   getMyUploads: () =>
     api.get<{ success: boolean; data: { books: any[] } }>('/api/books/my-uploads'),

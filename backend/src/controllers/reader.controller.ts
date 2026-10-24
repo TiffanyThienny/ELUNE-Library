@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
 import { canUserAccessBook } from '../utils/permission.util';
+import { presentCoverUrl } from '../utils/coverUrl.util';
 
 export const getReaderData = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -93,9 +94,20 @@ export const getReaderData = async (req: Request, res: Response): Promise<void> 
           category: book.category ? book.category.name : 'General',
           coverBg: book.coverBg,
           coverTextColor: book.coverTextColor,
+          coverUrl: presentCoverUrl(book),
           totalPages: book.totalPages,
           visibility: book.visibility,
           status: book.status,
+          // Needed by the visual PDF reader. The file itself is only served by the
+          // access-checked GET /api/books/:id/file (never statically).
+          fileUrl: book.fileUrl,
+          hasFile: Boolean(book.fileUrl),
+          fileStreamUrl: book.fileUrl ? `/api/books/${book.id}/file` : null,
+          fileType: book.fileType,
+          isScanned: book.isScanned,
+          processingStatus: book.processingStatus,
+          processingError: book.processingError,
+          uploadedBy: book.uploadedBy,
           chapters: formattedChapters,
         },
         chapters: formattedChapters,

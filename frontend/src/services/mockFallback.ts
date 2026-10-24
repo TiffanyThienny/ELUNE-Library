@@ -1,4 +1,4 @@
-import { Book, Category, Role, User } from '../types';
+﻿import { Book, Category, Role, User } from '../types';
 
 export const FALLBACK_CATEGORIES: Category[] = [
   { id: 'cat-philosophy', name: 'Philosophy', slug: 'philosophy', description: 'Ancient and modern philosophical inquiries into ethics and mind.', _count: { books: 1 } },
@@ -9,404 +9,13 @@ export const FALLBACK_CATEGORIES: Category[] = [
 ];
 
 export const FALLBACK_BOOKS: Book[] = [
-  {
-    id: 'meditations-aurelius',
-    title: 'Meditations',
-    author: 'Marcus Aurelius',
-    categoryId: 'cat-philosophy',
-    category: FALLBACK_CATEGORIES[0],
-    description: 'Personal notes on Stoic philosophy, self-mastery, emotional resilience, and ethical living in an unpredictable world.',
-    coverUrl: null,
-    totalPages: 120,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-med-1',
-        bookId: 'meditations-aurelius',
-        title: 'Debts and Lessons from My Elders',
-        chapterNumber: 1,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-med-1-1',
-            chapterId: 'ch-med-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'From my grandfather Verus, I learned good morals and the government of my temper. From the reputation and remembrance of my father, modesty and a manly character.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          },
-          {
-            id: 'cb-med-1-2',
-            chapterId: 'ch-med-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'From my mother, piety and beneficence, and abstinence, not only from evil deeds, but even from evil thoughts; and further, simplicity in my way of living, far removed from the habits of the rich.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          },
-          {
-            id: 'cb-med-1-3',
-            chapterId: 'ch-med-1',
-            blockIndex: 3,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly. They are like this because they cannot distinguish good from evil.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          },
-          {
-            id: 'cb-med-1-4',
-            chapterId: 'ch-med-1',
-            blockIndex: 4,
-            type: 'PARAGRAPH',
-            pageNumber: 2,
-            text: 'But I have seen the beauty of good, and the ugliness of evil, and I have recognized that the wrongdoer has a nature related to my own — not of the same blood or birth, but the same mind, and possessing a share of the divine.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          },
-          {
-            id: 'cb-med-1-5',
-            chapterId: 'ch-med-1',
-            blockIndex: 5,
-            type: 'PARAGRAPH',
-            pageNumber: 2,
-            text: 'And so none of them can hurt me. No one can implicate me in ugliness. Nor can I be angry at my relative, or hate him. We were born to work together like feet, hands, and the rows of the upper and lower teeth.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          }
-        ]
-      },
-      {
-        id: 'ch-med-2',
-        bookId: 'meditations-aurelius',
-        title: 'On the Ruling Mind & Tranquility',
-        chapterNumber: 2,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-med-2-1',
-            chapterId: 'ch-med-2',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 3,
-            text: 'Perform every act of your life as if it were your last. Lay aside all carelessness, all passionate aversion to the commands of reason, all hypocrisy, self-love, and dissatisfaction with your own share.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          },
-          {
-            id: 'cb-med-2-2',
-            chapterId: 'ch-med-2',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 3,
-            text: 'Remember how long you have put off these things, and how often you have received opportunities from the gods, and yet do not use them. A limit of time is fixed for you; if you do not use it for clearing away the clouds from your mind, it will go and never return.',
-            createdAt: '2026-01-01T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'architecture-of-silence',
-    title: 'The Architecture of Silence',
-    author: 'Evelyn St. Claire',
-    categoryId: 'cat-psychology',
-    category: FALLBACK_CATEGORIES[1],
-    description: 'An architectural exploration of quiet spaces, auditory sanctuaries, and how intentional stillness restores creative mental bandwidth in our noisy world.',
-    coverUrl: null,
-    totalPages: 140,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-02T00:00:00.000Z',
-    updatedAt: '2026-01-02T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-silence-1',
-        bookId: 'architecture-of-silence',
-        title: 'The Overstimulated Mind',
-        chapterNumber: 1,
-        createdAt: '2026-01-02T00:00:00.000Z',
-        updatedAt: '2026-01-02T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-sil-1-1',
-            chapterId: 'ch-silence-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Silence is not the absence of sound, but the presence of awareness. In an era dominated by rapid notifications and continuous sensory stimulation, true silence has transformed from a default condition into a deliberate sanctuary.',
-            createdAt: '2026-01-02T00:00:00.000Z'
-          },
-          {
-            id: 'cb-sil-1-2',
-            chapterId: 'ch-silence-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'When we create architectural nooks designed for sensory rest, cognitive fatigue dissipates. The human mind requires acoustic proportion just as much as optical clarity.',
-            createdAt: '2026-01-02T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'letters-lucilius-seneca',
-    title: 'Letters from a Stoic',
-    author: 'Lucius Annaeus Seneca',
-    categoryId: 'cat-philosophy',
-    category: FALLBACK_CATEGORIES[0],
-    description: 'Timeless moral essays and letters addressed to Lucilius on the brevity of life, tranquility, friendship, and authentic virtue.',
-    coverUrl: null,
-    totalPages: 210,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-03T00:00:00.000Z',
-    updatedAt: '2026-01-03T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-seneca-1',
-        bookId: 'letters-lucilius-seneca',
-        title: 'Letter I: On Saving Time',
-        chapterNumber: 1,
-        createdAt: '2026-01-03T00:00:00.000Z',
-        updatedAt: '2026-01-03T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-sen-1-1',
-            chapterId: 'ch-seneca-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Continue to act thus, my dear Lucilius — set yourself free for your own sake; gather and save your time, which has hitherto been taken from you, or stolen, or has slipped away.',
-            createdAt: '2026-01-03T00:00:00.000Z'
-          },
-          {
-            id: 'cb-sen-1-2',
-            chapterId: 'ch-seneca-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Nothing is ours except time alone. Nature has put us in possession of this fleeting and elusive property, from which whoever desires can drive us out.',
-            createdAt: '2026-01-03T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'republic-plato',
-    title: 'The Republic',
-    author: 'Plato',
-    categoryId: 'cat-philosophy',
-    category: FALLBACK_CATEGORIES[0],
-    description: 'Socratic dialogue on justice, the order and character of the ideal city-state, the Allegory of the Cave, and the philosophical soul.',
-    coverUrl: null,
-    totalPages: 340,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-04T00:00:00.000Z',
-    updatedAt: '2026-01-04T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-rep-1',
-        bookId: 'republic-plato',
-        title: 'Book VII: The Allegory of the Cave',
-        chapterNumber: 1,
-        createdAt: '2026-01-04T00:00:00.000Z',
-        updatedAt: '2026-01-04T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-rep-1-1',
-            chapterId: 'ch-rep-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Behold! human beings living in an underground den, which has a mouth open towards the light and reaching all along the den; here they have been from their childhood.',
-            createdAt: '2026-01-04T00:00:00.000Z'
-          },
-          {
-            id: 'cb-rep-1-2',
-            chapterId: 'ch-rep-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'To them, I said, the truth would be literally nothing but the shadows of the images. When one is liberated and steps into the sunlight, their eyes are dazzled before perception awakens.',
-            createdAt: '2026-01-04T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'art-of-war-sun-tzu',
-    title: 'The Art of War',
-    author: 'Sun Tzu',
-    categoryId: 'cat-self-dev',
-    category: FALLBACK_CATEGORIES[2],
-    description: 'Canonical military treatise offering timeless strategy on positioning, preparedness, psychological insight, and winning without conflict.',
-    coverUrl: null,
-    totalPages: 95,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-05T00:00:00.000Z',
-    updatedAt: '2026-01-05T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-war-1',
-        bookId: 'art-of-war-sun-tzu',
-        title: 'Chapter III: Attack by Stratagem',
-        chapterNumber: 1,
-        createdAt: '2026-01-05T00:00:00.000Z',
-        updatedAt: '2026-01-05T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-war-1-1',
-            chapterId: 'ch-war-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Hence to fight and conquer in all your battles is not supreme excellence; supreme excellence consists in breaking the enemy’s resistance without fighting.',
-            createdAt: '2026-01-05T00:00:00.000Z'
-          },
-          {
-            id: 'cb-war-1-2',
-            chapterId: 'ch-war-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'If you know the enemy and know yourself, you need not fear the result of a hundred battles. If you know yourself but not the enemy, for every victory gained you will also suffer a defeat.',
-            createdAt: '2026-01-05T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'siddhartha-hesse',
-    title: 'Siddhartha',
-    author: 'Hermann Hesse',
-    categoryId: 'cat-literature',
-    category: FALLBACK_CATEGORIES[4],
-    description: 'A lyrical novel dealing with the spiritual journey of self-discovery of a man living in ancient India during the time of the Gautama Buddha.',
-    coverUrl: null,
-    totalPages: 160,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-06T00:00:00.000Z',
-    updatedAt: '2026-01-06T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-sid-1',
-        bookId: 'siddhartha-hesse',
-        title: 'The Brahmin’s Son',
-        chapterNumber: 1,
-        createdAt: '2026-01-06T00:00:00.000Z',
-        updatedAt: '2026-01-06T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-sid-1-1',
-            chapterId: 'ch-sid-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'In the shade of the house, in the sunshine of the riverbank near the boats, in the shade of the Sal-wood forest, in the shade of the fig tree is where Siddhartha grew up.',
-            createdAt: '2026-01-06T00:00:00.000Z'
-          },
-          {
-            id: 'cb-sid-1-2',
-            chapterId: 'ch-sid-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Knowledge can be communicated, but not wisdom. One can find it, live it, be fortified by it, do wonders through it, but one cannot speak and teach it.',
-            createdAt: '2026-01-06T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'discourses-epictetus',
-    title: 'Discourses and Enchiridion',
-    author: 'Epictetus',
-    categoryId: 'cat-philosophy',
-    category: FALLBACK_CATEGORIES[0],
-    description: 'Direct transcripts of the teachings of Epictetus focusing on what is within our control versus what is external, yielding freedom and tranquility.',
-    coverUrl: null,
-    totalPages: 185,
-    language: 'English',
-    fileType: 'CANONICAL',
-    visibility: 'PUBLIC',
-    status: 'APPROVED',
-    uploadedBy: 'usr_admin',
-    uploader: { id: 'usr_admin', name: 'Elunè Administrator', email: 'admin@elune.read' },
-    createdAt: '2026-01-07T00:00:00.000Z',
-    updatedAt: '2026-01-07T00:00:00.000Z',
-    chapters: [
-      {
-        id: 'ch-epi-1',
-        bookId: 'discourses-epictetus',
-        title: 'Of the Things which are in Our Power',
-        chapterNumber: 1,
-        createdAt: '2026-01-07T00:00:00.000Z',
-        updatedAt: '2026-01-07T00:00:00.000Z',
-        contentBlocks: [
-          {
-            id: 'cb-epi-1-1',
-            chapterId: 'ch-epi-1',
-            blockIndex: 1,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Some things are in our control and others not. Things in our control are opinion, pursuit, desire, aversion, and, in a word, whatever are our own actions.',
-            createdAt: '2026-01-07T00:00:00.000Z'
-          },
-          {
-            id: 'cb-epi-1-2',
-            chapterId: 'ch-epi-1',
-            blockIndex: 2,
-            type: 'PARAGRAPH',
-            pageNumber: 1,
-            text: 'Things not in our control are body, property, reputation, command, and, in one word, whatever are not our own actions. Men are disturbed not by things, but by the view which they take of them.',
-            createdAt: '2026-01-07T00:00:00.000Z'
-          }
-        ]
-      }
-    ]
-  }
 ];
 
 export const FALLBACK_USERS: Record<string, { user: User; passwordHash: string }> = {
   'admin@elune.read': {
     user: {
       id: 'usr_admin',
-      name: 'Elunè Administrator',
+      name: 'ElunÃ¨ Administrator',
       email: 'admin@elune.read',
       role: 'ADMIN' as Role,
       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
@@ -1074,26 +683,13 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       success: true,
       data: {
         stats: {
-          booksRead: 1,
+          booksRead: 0,
           booksSaved: myLibrary.length,
-          summaries: 2,
-          bookmarks: savedBookmarks.length || 1,
-          notes: savedNotes.length || 1
+          summaries: 0,
+          bookmarks: savedBookmarks.length,
+          notes: savedNotes.length
         },
-        continueReading: [
-          {
-            bookId: FALLBACK_BOOKS[0].id,
-            title: FALLBACK_BOOKS[0].title,
-            author: FALLBACK_BOOKS[0].author,
-            coverUrl: FALLBACK_BOOKS[0].coverUrl,
-            chapterId: FALLBACK_BOOKS[0].chapters?.[0]?.id || null,
-            chapterTitle: FALLBACK_BOOKS[0].chapters?.[0]?.title || 'Debts and Lessons from My Elders',
-            contentBlockId: FALLBACK_BOOKS[0].chapters?.[0]?.contentBlocks?.[0]?.id || null,
-            currentPage: 1,
-            progressPercentage: 25,
-            lastReadAt: new Date().toISOString()
-          }
-        ],
+        continueReading: [],
         myLibrary,
         recentBookmarks: savedBookmarks.slice(0, 3),
         recentNotes: savedNotes.slice(0, 3)
@@ -1107,15 +703,15 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
       success: true,
       data: {
         statistics: {
-          totalUsers: 3,
-          totalBooks: 4,
-          publicBooks: 2,
-          privateBooks: 1,
-          pendingUploads: 1,
-          approvedBooks: 2,
-          rejectedBooks: 1,
-          totalAIRequests: 18,
-          activeReaders: 3
+          totalUsers: 0,
+          totalBooks: 0,
+          publicBooks: 0,
+          privateBooks: 0,
+          pendingUploads: 0,
+          approvedBooks: 0,
+          rejectedBooks: 0,
+          totalAIRequests: 0,
+          activeReaders: 0
         }
       }
     } as T;
@@ -1523,9 +1119,9 @@ export function handleFallbackRequest<T>(endpoint: string, options: RequestInit 
     let chapterSummary = '';
     if (blocks.length > 0) {
       const firstFew = blocks.slice(0, 3).map((b: any) => b.text).join('\n\n');
-      chapterSummary = `Chapter Synthesis — "${foundChapter?.title || 'Chapter'}":\n\n${firstFew.slice(0, 600)}...`;
+      chapterSummary = `Chapter Synthesis â€” "${foundChapter?.title || 'Chapter'}":\n\n${firstFew.slice(0, 600)}...`;
     } else {
-      chapterSummary = `Ringkasan Bagian — "${foundChapter?.title || parentBook?.title || 'Buku'}":\n\nBagian ini memaparkan uraian dan argumen utama dari buku "${parentBook?.title || 'Volume'}" karya ${parentBook?.author || 'Penulis'}, mengajak pembaca merenungkan pesan filosofis dan implikasi praktisnya dalam kehidupan.`;
+      chapterSummary = `Ringkasan Bagian â€” "${foundChapter?.title || parentBook?.title || 'Buku'}":\n\nBagian ini memaparkan uraian dan argumen utama dari buku "${parentBook?.title || 'Volume'}" karya ${parentBook?.author || 'Penulis'}, mengajak pembaca merenungkan pesan filosofis dan implikasi praktisnya dalam kehidupan.`;
     }
 
     return {

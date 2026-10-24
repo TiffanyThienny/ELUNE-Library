@@ -2,8 +2,40 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import { getLocalPdfFile, getLatestLocalPdfFile, saveLocalPdfFile } from '../utils/localBookStorage';
-import { API_BASE_URL, resolveAssetUrl } from '../services/api';
+import { getLocalPdfFile, saveLocalPdfFile, removeLocalPdfFile } from '../utils/localBookStorage';
+import { API_BASE_URL } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { classifyAccessProbe, decideCachedPdfUse, AccessProbeResult } from '../utils/pdfCachePolicy';
+
+type PdfErrorKind = 'denied' | 'missing' | 'network' | 'invalid';
+
+const PDF_ERROR_MESSAGES: Record<PdfErrorKind, string> = {
+  denied: 'You do not have permission to open this book.',
+  missing: 'The stored PDF for this book could not be found on the server.',
+  network: 'The PDF could not be downloaded. Check your connection and try again.',
+  invalid: 'This file could not be rendered as a PDF.',
+};
+
+/** Map pdf.js / fetch failures to a user-facing category. */
+function classifyPdfLoadError(err: any): PdfErrorKind {
+  const status: number | undefined = err?.status;
+  if (status === 401 || status === 403) return 'denied';
+  if (status === 404 || err?.name === 'MissingPDFException') return 'missing';
+  if (err?.name === 'InvalidPDFException' || err?.name === 'PasswordException') return 'invalid';
+  return 'network';
+}
+
+/** Ask the server whether this user may still read the book (small JSON endpoint). */
+async function probeBookAccess(bookId: string, token: string | null): Promise<AccessProbeResult> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/books/${encodeURIComponent(bookId)}/processing-status`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return classifyAccessProbe(res.status);
+  } catch {
+    return classifyAccessProbe(null);
+  }
+}
 import {
   ChevronLeft,
   ChevronRight,
@@ -42,52 +74,63 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
   const [rendering, setRendering] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isMissingBinary, setIsMissingBinary] = useState<boolean>(false);
+  const [errorKind, setErrorKind] = useState<PdfErrorKind | null>(null);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfDocRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
+  const loadSeqRef = useRef<number>(0);
 
   const initPdf = async (customFile?: File) => {
+    const loadSeq = ++loadSeqRef.current;
+    if (pdfDocRef.current) {
+      pdfDocRef.current.destroy().catch(() => {});
+      pdfDocRef.current = null;
+    }
     setLoading(true);
     setError(null);
+    setErrorKind(null);
     setIsMissingBinary(false);
 
     try {
       let pdfSource: any = null;
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('elune_token') : null;
 
       if (customFile) {
-        await saveLocalPdfFile(bookId, customFile);
+        // Explicit local file chosen by the user on this device. Cached only for a
+        // logged-in user, scoped to (user, book); guests read it in memory only.
+        if (!customFile.name.toLowerCase().endsWith('.pdf')) {
+          setErrorKind('invalid');
+          setError('Please choose a PDF file.');
+          setLoading(false);
+          return;
+        }
+        await saveLocalPdfFile(bookId, customFile, userId);
         const buffer = await customFile.arrayBuffer();
         pdfSource = { data: new Uint8Array(buffer) };
       } else {
-        // 1. Try local IndexedDB file blob for this bookId
-        let localBlob = await getLocalPdfFile(bookId);
-        // Fallback: check if there is any recently uploaded PDF blob in local storage
-        if (!localBlob) {
-          localBlob = await getLatestLocalPdfFile();
-        }
-
+        // 1. Cached copy for exactly this (user, book). No "latest PDF" fallback.
+        const localBlob = await getLocalPdfFile(bookId, userId);
         if (localBlob) {
-          if (localBlob instanceof Blob) {
-            const buffer = await localBlob.arrayBuffer();
-            pdfSource = { data: new Uint8Array(buffer) };
-          } else if (localBlob instanceof ArrayBuffer) {
-            pdfSource = { data: new Uint8Array(localBlob) };
+          // The server must still allow access; an explicit 401/403/404 purges the copy.
+          const probe = await probeBookAccess(bookId, token);
+          if (decideCachedPdfUse(probe) === 'purge') {
+            await removeLocalPdfFile(bookId, userId);
+            setErrorKind('denied');
+            setError('You no longer have access to this book.');
+            setLoading(false);
+            return;
           }
+          const buffer = localBlob instanceof Blob ? await localBlob.arrayBuffer() : localBlob;
+          pdfSource = { data: new Uint8Array(buffer) };
         }
 
-        // 2. Fallback to backend-hosted file
+        // 2. The stored file, through the permission-checked stream endpoint only.
         if (!pdfSource && fileUrl) {
-          const token =
-            typeof window !== 'undefined'
-              ? window.localStorage.getItem('elune_token')
-              : null;
-
-          const absoluteFileUrl = resolveAssetUrl(fileUrl);
-          const streamUrl = `${API_BASE_URL}/api/books/${bookId}/file`;
-
           pdfSource = {
-            url: absoluteFileUrl || streamUrl,
+            url: `${API_BASE_URL}/api/books/${encodeURIComponent(bookId)}/file`,
             httpHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
             withCredentials: false,
           };
@@ -107,13 +150,20 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
       });
 
       const doc = await loadingTask.promise;
+      if (loadSeq !== loadSeqRef.current) {
+        // The user switched books while this one was loading: never show it.
+        doc.destroy().catch(() => {});
+        return;
+      }
       pdfDocRef.current = doc;
       setTotalPages(doc.numPages);
       setLoading(false);
     } catch (err: any) {
+      if (loadSeq !== loadSeqRef.current) return;
       console.error('Failed to load visual PDF document:', err);
-      setIsMissingBinary(true);
-      setError(err.message || 'Unable to load PDF document for visual rendering.');
+      const kind = classifyPdfLoadError(err);
+      setErrorKind(kind);
+      setError(PDF_ERROR_MESSAGES[kind]);
       setLoading(false);
     }
   };
@@ -127,9 +177,11 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
       isMounted = false;
       if (pdfDocRef.current) {
         pdfDocRef.current.destroy().catch(() => {});
+        pdfDocRef.current = null;
       }
+      loadSeqRef.current++; // invalidate any in-flight load for the previous book
     };
-  }, [bookId, fileUrl]);
+  }, [bookId, fileUrl, userId]);
 
   // Render Page on Canvas
   useEffect(() => {
@@ -241,6 +293,32 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
     );
   }
 
+  if (errorKind === 'denied' || errorKind === 'network') {
+    return (
+      <div
+        role="alert"
+        className="py-12 px-6 text-center space-y-4 bg-[#FAF7F2] rounded-3xl p-8 border border-[#E8DFD3] max-w-xl mx-auto my-6 shadow-xs"
+      >
+        <div className="w-14 h-14 rounded-2xl bg-amber-100/80 text-amber-900 flex items-center justify-center mx-auto border border-amber-200 shadow-2xs">
+          <AlertTriangle className="w-7 h-7 text-[#8C7355]" aria-hidden="true" />
+        </div>
+        <h3 className="font-serif-literata text-xl font-bold text-[#2C2421]">
+          {errorKind === 'denied' ? 'Access denied' : 'Could not load the PDF'}
+        </h3>
+        <p className="text-xs sm:text-sm text-[#665A4F] max-w-md mx-auto leading-relaxed">{error}</p>
+        {errorKind === 'network' && (
+          <button
+            type="button"
+            onClick={() => initPdf()}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#2C2421] hover:bg-[#433832] text-white text-xs font-semibold"
+          >
+            Try again
+          </button>
+        )}
+      </div>
+    );
+  }
+
   if (isMissingBinary || error) {
     return (
       <div className="py-12 px-6 text-center space-y-5 bg-[#FAF7F2] rounded-3xl p-8 border border-[#E8DFD3] max-w-xl mx-auto my-6 shadow-xs">
@@ -254,6 +332,11 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
           <p className="text-xs sm:text-sm text-[#665A4F] max-w-md mx-auto leading-relaxed">
             Untuk membaca dan melihat visualisasi halaman buku ini secara utuh, silakan muat file PDF dokumen dari perangkat Anda satu kali. File akan langsung disimpan di browser untuk dibaca seterusnya.
           </p>
+          {error && (
+            <p role="alert" className="text-xs text-red-700">
+              {error}
+            </p>
+          )}
         </div>
 
         <div>

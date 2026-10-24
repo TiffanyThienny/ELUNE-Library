@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Book } from '../types';
-import { libraryService, bookService } from '../services/api';
+import { libraryService, bookService, resolveAssetUrl } from '../services/api';
 import { BookCard } from '../components/BookCard';
 import { LoadingState } from '../components/LoadingState';
 import { EmptyState } from '../components/EmptyState';
@@ -545,7 +545,7 @@ export const PersonalLibraryPage: React.FC = () => {
                     >
                       {book.coverUrl ? (
                         <img
-                          src={book.coverUrl}
+                          src={resolveAssetUrl(book.coverUrl) || undefined}
                           alt={book.title}
                           className="w-full h-full object-cover"
                         />
