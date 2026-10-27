@@ -13,6 +13,7 @@ import {
   UPLOAD_TIMEOUT_MIN_MS
 } from '../src/utils/uploadReliability';
 import { summaryTextFromResponse, answerFromResponse } from '../src/utils/aiResponse';
+import { computePageProgress } from '../src/utils/readingProgress';
 
 const results: { name: string; ok: boolean; err?: string }[] = [];
 function assert(c: boolean, m: string) { if (!c) throw new Error(m); }
@@ -131,6 +132,17 @@ async function main() {
     assert(answerFromResponse({ question: 'q', answer: 'A1' }) === 'A1', 'real');
     assert(answerFromResponse({ chat: { answer: 'A2' } }) === 'A2', 'mock');
     assert(answerFromResponse({}) === null, 'empty');
+  });
+
+  // ---- PDF reading progress (floor(page/total*100), clamped) ----
+  await t('progress: 633-page PDF examples (1->0, 18->2, 317->50, 633->100)', () => {
+    const got = [1, 18, 317, 633].map((p) => computePageProgress(p, 633));
+    assert(JSON.stringify(got) === JSON.stringify([0, 2, 50, 100]), `got ${JSON.stringify(got)}`);
+  });
+  await t('progress: clamps out-of-range pages and handles a missing page count', () => {
+    assert(computePageProgress(9999, 633) === 100, 'over-range clamps to 100');
+    assert(computePageProgress(0, 633) === 0, 'page 0 clamps to page 1 -> 0');
+    assert(computePageProgress(5, 0) === 0 && computePageProgress(NaN, 10) === 0, 'invalid inputs -> 0');
   });
 
   const failed = results.filter((r) => !r.ok).length;

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Book, Chapter, ContentBlock, AudioSegment, Bookmark, Note } from '../types';
 import { readerService, bookmarkService, noteService, audioService, IS_DEMO_MOCK_MODE } from '../services/api';
+import { computePageProgress } from '../utils/readingProgress';
 
 interface ReaderContextType {
   book: Book | null;
@@ -38,6 +39,21 @@ interface ReaderContextType {
   nextParagraph: () => void;
   prevParagraph: () => void;
 
+  // PDF page tracking + page bookmarks (single-reader model)
+  setPdfPage: (page: number, totalPages?: number) => void;
+  /** Ask the PDF viewer to navigate to a page (bookmarks, notes). */
+  requestPdfPage: (page: number) => void;
+  pageRequest: { page: number; nonce: number } | null;
+  /** Add a note to a PDF page (anchored to the nearest text block on or before that page). */
+  addPageNote: (page: number, content: string) => Promise<void>;
+  canAddNotes: boolean;
+  isPageBookmarked: (page: number) => boolean;
+  togglePageBookmark: (page: number) => Promise<void>;
+
+  // Summary (shared so audio can read exactly what the Summary panel shows)
+  summaryText: string | null;
+  setSummaryText: (text: string | null) => void;
+
   // Navigation
   selectChapter: (chapterId: string) => void;
   loadBook: (bookId: string) => Promise<void>;
@@ -57,6 +73,10 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [summaryText, setSummaryText] = useState<string | null>(null);
+  // Page count reported by the PDF itself (authoritative over the DB value).
+  const [pdfPageCount, setPdfPageCount] = useState<number>(0);
+  const [pageRequest, setPageRequest] = useState<{ page: number; nonce: number } | null>(null);
 
   // Audio states
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -99,6 +119,20 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, []);
 
+  // Stop TTS and reset audio when switching books
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current.src = '';
+    }
+    setIsPlaying(false);
+    // Never let a previous book's summary linger (audio reads the summary).
+    setSummaryText(null);
+  }, [book?.id]);
+
   // Sync Audio Time -> Content Block (Paragraph) & Page
   useEffect(() => {
     if (!audioSegments || audioSegments.length === 0) return;
@@ -128,44 +162,57 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [audioCurrentTime, audioSegments, activeAudioSegment, currentChapter]);
 
-  // Debounced Save Reading Progress
-  const debouncedSaveProgress = useCallback(
-    (bId: string, chapId: string, blkId: string | null, page: number, totalPgs: number) => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+  // ---- PDF reading progress -------------------------------------------------
+  // Progress is derived ONLY from the real PDF page and the real page count:
+  //   floor(currentPage / totalPages * 100), clamped to 0..100.
+  // The indicator updates immediately; persistence is debounced, and a pending
+  // save is flushed (never dropped) when the book changes or the reader unmounts.
+  const pendingSaveRef = useRef<null | { bookId: string; payload: Parameters<typeof readerService.saveProgress>[1] }>(null);
+  const progressReadyRef = useRef(false); // false until the saved position is restored
 
-      saveTimeoutRef.current = setTimeout(async () => {
-        try {
-          const percentage = Math.min(100, Math.round((page / (totalPgs || 1)) * 100));
-          setProgressPercentage(percentage);
-          await readerService.saveProgress(bId, {
-            chapterId: chapId,
-            contentBlockId: blkId || undefined,
-            pageNumber: page,
-            progressPercentage: percentage,
-          });
-        } catch (e) {
-          console.error('Failed to save progress', e);
-        }
-      }, 3500); // 3.5s debounce
-    },
-    []
-  );
-
-  // Trigger debounced save progress on contentBlockId/page changes
-  useEffect(() => {
-    if (book && currentChapter) {
-      debouncedSaveProgress(
-        book.id,
-        currentChapter.id,
-        currentContentBlockId,
-        currentPage,
-        book.totalPages
-      );
+  const flushPendingSave = useCallback(() => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = null;
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) {
+      readerService.saveProgress(pending.bookId, pending.payload).catch((e) => console.error('Failed to save progress', e));
     }
-  }, [book, currentChapter, currentContentBlockId, currentPage, debouncedSaveProgress]);
+  }, []);
+
+  useEffect(() => {
+    if (!book || !progressReadyRef.current) return;
+    const total = pdfPageCount || book.totalPages || 0;
+    const percentage = computePageProgress(currentPage, total);
+    setProgressPercentage(percentage);
+
+    pendingSaveRef.current = {
+      bookId: book.id,
+      payload: {
+        chapterId: currentChapter?.id,
+        contentBlockId: currentContentBlockId || undefined,
+        pageNumber: currentPage,
+        progressPercentage: percentage,
+      },
+    };
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(flushPendingSave, 1200);
+  }, [book?.id, currentPage, pdfPageCount, flushPendingSave]);
+
+  // Flush the last position of the previous book before switching, and on unmount.
+  useEffect(() => {
+    return () => flushPendingSave();
+  }, [book?.id, flushPendingSave]);
 
   // Load Book reader data
   const loadBook = async (bookId: string) => {
+    // Save the previous book's final position, then reset per-book page state so
+    // nothing from the previous book is reused (or saved under the new book).
+    flushPendingSave();
+    progressReadyRef.current = false;
+    setPdfPageCount(0);
+    setCurrentPage(1);
+    setProgressPercentage(0);
     setLoading(true);
     setError(null);
     try {
@@ -273,6 +320,8 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setCurrentChapter(targetChapter || null);
       setCurrentContentBlockId(targetBlockId);
       setCurrentPage(targetPage);
+      // Saved position restored: from now on, real page changes drive progress.
+      progressReadyRef.current = true;
 
       if (targetChapter) {
         await loadChapterAudio(bookId, targetChapter.id);
@@ -292,13 +341,17 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (audioRes.success && audioRes.data?.audioTrack) {
         const track = audioRes.data.audioTrack;
         const segments = audioRes.data.segments || [];
-        setAudioUrl(track.audioUrl);
+        // The track.audioUrl is a virtual placeholder (/audio/stream/...) that has no
+        // real audio file behind it. Setting it would make the AudioPlayer show a
+        // broken HTML5 audio player instead of the working Web Speech TTS path.
+        // Keep segments for paragraph-time mapping, but leave audioUrl null so the
+        // browser's speech synthesis is used for narration.
+        setAudioUrl(null);
         setAudioSegments(segments);
 
         if (audioElementRef.current) {
-          audioElementRef.current.src = track.audioUrl;
-          audioElementRef.current.playbackRate = playbackSpeed;
-          audioElementRef.current.load();
+          audioElementRef.current.pause();
+          audioElementRef.current.src = '';
         }
       } else {
         setAudioUrl(null);
@@ -438,6 +491,75 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  // PDF page tracking. Updating the page triggers the debounced progress save
+  // (percentage is derived from page / totalPages for the single PDF reader).
+  const setPdfPage = (page: number, totalPages?: number) => {
+    if (totalPages && totalPages > 0) setPdfPageCount(totalPages);
+    if (page > 0) setCurrentPage(page);
+  };
+
+  const requestPdfPage = (page: number) => {
+    if (page > 0) setPageRequest({ page, nonce: Date.now() + Math.random() });
+  };
+
+  // Notes and bookmarks must reference an existing content block (DB schema:
+  // non-null chapterId/contentBlockId). Pick the block on the nearest page at or
+  // before the requested page so the stored pageNumber stays the real PDF page.
+  const anchorForPage = (page: number): { chapterId: string; contentBlockId: string } | null => {
+    let best: { chapterId: string; contentBlockId: string; pageNumber: number } | null = null;
+    let first: { chapterId: string; contentBlockId: string; pageNumber: number } | null = null;
+    for (const ch of chapters) {
+      for (const b of ch.contentBlocks || []) {
+        if (String(b.id).startsWith('cb-default-')) continue; // synthetic placeholder, not in the DB
+        const cand = { chapterId: ch.id, contentBlockId: b.id, pageNumber: b.pageNumber || 1 };
+        if (!first || cand.pageNumber < first.pageNumber) first = cand;
+        if (cand.pageNumber <= page && (!best || cand.pageNumber >= best.pageNumber)) best = cand;
+      }
+    }
+    const pick = best || first;
+    return pick ? { chapterId: pick.chapterId, contentBlockId: pick.contentBlockId } : null;
+  };
+  const canAddNotes = anchorForPage(1) !== null;
+
+  const addPageNote = async (page: number, content: string) => {
+    if (!book) throw new Error('No book is open.');
+    const anchor = anchorForPage(page);
+    if (!anchor) {
+      throw new Error('Notes need recognized text in this book. Run text recognition (OCR) from the Summary tab first.');
+    }
+    const res = await noteService.createNote(book.id, { ...anchor, pageNumber: page, content });
+    const created = (res.data as any)?.note ?? res.data;
+    if (!res.success || !created?.id) throw new Error('The note was not saved.');
+    setNotes((prev) => [created, ...prev]);
+  };
+
+  // Page-level bookmarks for the PDF reader. We reuse the existing bookmark API,
+  // which requires a chapterId/contentBlockId, by anchoring to the first content
+  // block when available and always storing the real PDF pageNumber. The page
+  // number is what the reader uses to re-open the bookmark.
+  const isPageBookmarked = (page: number) => bookmarks.some((b) => b.pageNumber === page);
+
+  const togglePageBookmark = async (page: number) => {
+    if (!book) return;
+    const existing = bookmarks.find((b) => b.pageNumber === page);
+    if (existing) {
+      await bookmarkService.deleteBookmark(existing.id);
+      setBookmarks((prev) => prev.filter((b) => b.id !== existing.id));
+      return;
+    }
+    const anchor = anchorForPage(page);
+    if (!anchor) {
+      throw new Error('Bookmarks need recognized text in this book. Run text recognition (OCR) from the Summary tab first.');
+    }
+    // NOTE: the bookmark API upserts per (user, contentBlock); pages that share an
+    // anchor block share one bookmark row (its pageNumber is updated).
+    const res = await bookmarkService.createBookmark(book.id, { ...anchor, pageNumber: page, note: `Page ${page}` });
+    const created = (res.data as any)?.bookmark ?? res.data;
+    if (res.success && created?.id) {
+      setBookmarks((prev) => [...prev.filter((b) => b.id !== created.id), created]);
+    }
+  };
+
   // Bookmarks
   const isBookmarked = (contentBlockId: string) => {
     return bookmarks.some((b) => b.contentBlockId === contentBlockId);
@@ -478,8 +600,9 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (existing) {
       const res = await noteService.updateNote(existing.id, content);
-      if (res.success && res.data?.note) {
-        setNotes((prev) => prev.map((n) => (n.id === existing.id ? res.data.note : n)));
+      const updated = (res.data as any)?.note ?? res.data;
+      if (res.success && updated?.id) {
+        setNotes((prev) => prev.map((n) => (n.id === existing.id ? updated : n)));
       }
     } else {
       const res = await noteService.createNote(book.id, {
@@ -488,8 +611,9 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         pageNumber,
         content,
       });
-      if (res.success && res.data?.note) {
-        setNotes((prev) => [...prev, res.data.note]);
+      const created = (res.data as any)?.note ?? res.data;
+      if (res.success && created?.id) {
+        setNotes((prev) => [...prev, created]);
       }
     }
   };
@@ -534,6 +658,16 @@ export const ReaderProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         jumpToParagraph,
         nextParagraph,
         prevParagraph,
+
+        setPdfPage,
+        requestPdfPage,
+        pageRequest,
+        addPageNote,
+        canAddNotes,
+        isPageBookmarked,
+        togglePageBookmark,
+        summaryText,
+        setSummaryText,
 
         selectChapter,
         loadBook,

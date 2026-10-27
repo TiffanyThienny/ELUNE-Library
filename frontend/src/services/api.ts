@@ -239,7 +239,7 @@ export const readerService = {
   saveProgress: (
     bookId: string,
     data: {
-      chapterId: string;
+      chapterId?: string;
       contentBlockId?: string;
       pageNumber: number;
       progressPercentage: number;
@@ -311,11 +311,11 @@ export const audioService = {
 
 // AI Service
 export const aiService = {
-  summarizeBook: (bookId: string) =>
-    api.post<{ success: boolean; data: { summary: any } }>(`/api/ai/summarize/book/${bookId}`),
+  summarizeBook: (bookId: string, refresh = false) =>
+    api.post<{ success: boolean; data: any }>(`/api/ai/summarize/book/${bookId}${refresh ? '?refresh=true' : ''}`),
 
-  summarizeChapter: (chapterId: string) =>
-    api.post<{ success: boolean; data: { summary: any } }>(`/api/ai/summarize/chapter/${chapterId}`),
+  summarizeChapter: (chapterId: string, refresh = false) =>
+    api.post<{ success: boolean; data: any }>(`/api/ai/summarize/chapter/${chapterId}${refresh ? '?refresh=true' : ''}`),
 
   askQuestion: (bookId: string, question: string) =>
     api.post<{ success: boolean; data: { chat: any } }>(`/api/ai/ask/${bookId}`, { question }),

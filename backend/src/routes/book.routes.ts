@@ -13,6 +13,8 @@ import {
   getMyUploads,
   deleteBook,
   getUploadStatus,
+  startBookOcr,
+  getBookOcrStatus,
 } from '../controllers/book.controller';
 import { authenticateJwt, optionalAuth } from '../middleware/auth.middleware';
 import { uploadBookFields } from '../middleware/upload.middleware';
@@ -32,6 +34,8 @@ router.put('/:id/progress', authenticateJwt, saveBookProgress);
 router.get('/:id/audio', optionalAuth, getBookAudio);
 router.post('/:id/audio/generate', authenticateJwt, generateBookAudio);
 router.get('/:id/file', optionalAuth, getBookFile);
+router.get('/:id/ocr', optionalAuth, getBookOcrStatus);
+router.post('/:id/ocr', authenticateJwt, startBookOcr);
 router.post('/upload', authenticateJwt, uploadBookFields, uploadBook);
 router.delete('/:id', authenticateJwt, deleteBook);
 

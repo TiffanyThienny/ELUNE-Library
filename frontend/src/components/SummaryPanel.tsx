@@ -1,141 +1,121 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
 import { summaryTextFromResponse } from '../utils/aiResponse';
-import { FileText, BookOpen, Layers, RefreshCw } from 'lucide-react';
+import { FileText, RefreshCw, Sparkles, AlertTriangle } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 
+/**
+ * One full-book summary. The text is published to ReaderContext so the audio
+ * player reads exactly what is shown here.
+ */
 export const SummaryPanel: React.FC = () => {
-  const { book, currentChapter } = useReader();
-  const [summary, setSummary] = useState<string | null>(null);
-  const [summaryType, setSummaryType] = useState<'CHAPTER' | 'BOOK'>('CHAPTER');
+  const { book, summaryText, setSummaryText } = useReader();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
+  const [meta, setMeta] = useState<{ source?: string; model?: string; fallbackReason?: string; cached?: boolean } | null>(null);
+  const currentBookIdRef = useRef<string | null>(null);
+  currentBookIdRef.current = book?.id ?? null;
 
-  const generateChapterSummary = async () => {
-    if (!currentChapter) return;
-    setLoading(true);
-    setError(null);
-    setSummaryType('CHAPTER');
-    try {
-      const res = await aiService.summarizeChapter(currentChapter.id);
-      const text = res.success ? summaryTextFromResponse(res.data) : null;
-      if (text) {
-        setSummary(text);
-      } else {
-        setError('The server returned no chapter summary.');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate chapter summary');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateBookSummary = async () => {
-    if (!book) return;
-    setLoading(true);
-    setError(null);
-    setSummaryType('BOOK');
-    try {
-      const res = await aiService.summarizeBook(book.id);
-      const text = res.success ? summaryTextFromResponse(res.data) : null;
-      if (text) {
-        setSummary(text);
-      } else {
-        setError('The server returned no book summary.');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate book summary');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // A different book: forget the previous book's summary state.
   useEffect(() => {
-    if (book && !summary) {
-      if (currentChapter?.contentBlocks && currentChapter.contentBlocks.length > 1) {
-        generateChapterSummary();
-      } else {
-        generateBookSummary();
+    setError(null);
+    setMeta(null);
+  }, [book?.id]);
+
+  const generate = async (refresh = false) => {
+    if (!book || loading) return;
+    const requestedBookId = book.id;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await aiService.summarizeBook(requestedBookId, refresh);
+      // Ignore a late response if the user already switched books.
+      if (requestedBookId !== currentBookIdRef.current) return;
+      const text = res.success ? summaryTextFromResponse(res.data) : null;
+      if (!text) {
+        setError({ message: 'The server returned an empty summary.' });
+        return;
       }
+      setSummaryText(text);
+      setMeta({ source: res.data?.source, model: res.data?.model, fallbackReason: res.data?.fallbackReason, cached: res.data?.cached });
+    } catch (err: any) {
+      setSummaryText(null);
+      setMeta(null);
+      setError({ message: err?.message || 'The summary could not be generated.', code: err?.code });
+    } finally {
+      setLoading(false);
     }
-  }, [book?.id, currentChapter?.id]);
+  };
+
+  const isFallback = meta?.source === 'extractive-fallback';
 
   return (
     <div className="space-y-4">
-      {/* Action buttons */}
-      <div className="flex gap-2">
-        <button
-          onClick={generateChapterSummary}
-          disabled={loading || !currentChapter}
-          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all shadow-2xs ${
-            summaryType === 'CHAPTER' && summary
-              ? 'bg-[#2C2421] text-white'
-              : 'bg-[#FAF7F2] border border-[#E8DFD3] text-[#2C2421] hover:bg-[#EBDDC8]'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5 text-[#8C7355]" />
-          Chapter Summary
-        </button>
+      <button
+        onClick={() => generate(false)}
+        disabled={loading || !book}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all shadow-2xs bg-[#2C2421] text-white hover:bg-[#433832] disabled:opacity-50"
+      >
+        <Sparkles className="w-3.5 h-3.5" />
+        {summaryText ? 'Show Book Summary' : 'Generate Book Summary'}
+      </button>
 
-        <button
-          onClick={generateBookSummary}
-          disabled={loading || !book}
-          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all shadow-2xs ${
-            summaryType === 'BOOK' && summary
-              ? 'bg-[#2C2421] text-white'
-              : 'bg-[#FAF7F2] border border-[#E8DFD3] text-[#2C2421] hover:bg-[#EBDDC8]'
-          }`}
-        >
-          <BookOpen className="w-3.5 h-3.5 text-[#8C7355]" />
-          Full Book Summary
-        </button>
-      </div>
-
-      {/* Loading */}
       {loading && (
         <div className="p-6 bg-white border border-[#E8DFD3] rounded-2xl">
-          <LoadingState message="Distilling chapter synthesis..." />
+          <LoadingState message="Reading the whole book and writing a summary..." />
         </div>
       )}
 
-      {/* Error */}
       {error && !loading && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
-          {error}
+        <div role="alert" className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+          <p className="font-bold flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {error.code === 'NEEDS_OCR' ? 'This PDF needs OCR' : 'Summary unavailable'}
+          </p>
+          <p>{error.message}</p>
         </div>
       )}
 
-      {/* Summary Content */}
-      {summary && !loading && (
+      {summaryText && !loading && (
         <div className="p-4 bg-white border border-[#E8DFD3] rounded-2xl shadow-xs space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-[#F2ECE1]">
             <span className="text-xs font-bold text-[#8C7355] uppercase tracking-wider flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5" />
-              {summaryType === 'CHAPTER' ? 'Chapter Synthesis' : 'Comprehensive Synopsis'}
+              Book Summary
             </span>
             <button
-              onClick={summaryType === 'CHAPTER' ? generateChapterSummary : generateBookSummary}
+              onClick={() => generate(true)}
               className="text-stone-400 hover:text-[#2C2421] transition-colors"
-              title="Regenerate"
+              title="Regenerate summary"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
 
+          {meta && (
+            <p
+              data-summary-source={meta.source}
+              className={`text-[10px] font-semibold px-2 py-1 rounded-lg ${isFallback ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}
+            >
+              {isFallback
+                ? `Extractive summary — sentences taken directly from the book, not AI-written. ${meta.fallbackReason || ''}`
+                : `AI-generated summary${meta.model ? ` (${meta.model})` : ''}.`}
+              {meta.cached ? ' (saved)' : ''}
+            </p>
+          )}
+
           <div className="text-xs text-[#2C2421] leading-relaxed whitespace-pre-line font-serif-literata">
-            {summary}
+            {summaryText}
           </div>
         </div>
       )}
 
-      {!summary && !loading && (
+      {!summaryText && !loading && !error && (
         <div className="p-6 text-center bg-white border border-[#E8DFD3] rounded-2xl">
           <FileText className="w-6 h-6 text-[#8C7355] mx-auto mb-2 opacity-70" />
-          <h4 className="text-xs font-bold text-[#2C2421] mb-1">Text Synthesis</h4>
           <p className="text-[11px] text-[#665A4F] leading-normal">
-            Choose whether to synthesize the active chapter or the overarching themes of the entire book.
+            Generate one summary of the whole book. You can then listen to it with the audio player.
           </p>
         </div>
       )}

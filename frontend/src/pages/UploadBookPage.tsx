@@ -460,18 +460,36 @@ export const UploadBookPage: React.FC = () => {
           </div>
 
           {/* Cover Image */}
-          <div className="p-4 border-2 border-dashed border-[#E8DFD3] rounded-2xl bg-[#FAF7F2]/60 text-center hover:border-[#8C7355] transition-colors">
+          <div className="p-4 border-2 border-dashed border-[#E8DFD3] rounded-2xl bg-[#FAF7F2]/60 text-center hover:border-[#8C7355] transition-colors overflow-hidden">
             <Image className="w-8 h-8 text-[#8C7355] mx-auto mb-2 opacity-80" />
             <span className="block text-xs font-semibold text-[#2C2421]">Cover Artwork</span>
             <span className="block text-[11px] text-[#8C7355] mb-3">JPEG, PNG, or WebP</span>
-            <input
-              type="file"
-              aria-label="Cover image"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              disabled={loading}
-              onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
-              className="text-xs text-[#665A4F] file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#2C2421] file:text-white hover:file:bg-[#433832]"
-            />
+            {coverFile ? (
+              <div className="space-y-2">
+                <img
+                  src={URL.createObjectURL(coverFile)}
+                  alt="Cover preview"
+                  className="w-24 h-32 object-cover rounded-xl mx-auto border border-[#E8DFD3] shadow-xs"
+                />
+                <span className="block text-[11px] text-[#665A4F] break-all">{coverFile.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setCoverFile(null)}
+                  className="text-[11px] text-red-600 hover:text-red-700 font-semibold"
+                >
+                  Remove cover
+                </button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                aria-label="Cover image"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                disabled={loading}
+                onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
+                className="text-xs text-[#665A4F] file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#2C2421] file:text-white hover:file:bg-[#433832]"
+              />
+            )}
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useReader } from '../context/ReaderContext';
 import { aiService } from '../services/api';
 import { answerFromResponse } from '../utils/aiResponse';
@@ -6,13 +6,15 @@ import { Send, BookOpen, User, MessageSquare } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
-  sender: 'user' | 'ai';
+  sender: 'user' | 'ai' | 'error';
   text: string;
 }
 
 export const AIChat: React.FC = () => {
   const { book } = useReader();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // A different book starts a fresh conversation (no leakage between books).
+  useEffect(() => { setMessages([]); }, [book?.id]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -34,17 +36,18 @@ export const AIChat: React.FC = () => {
     try {
       const res = await aiService.askQuestion(book.id, questionText);
       const answer = res.success ? answerFromResponse(res.data) : null;
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: 'ai',
-        text: answer ?? 'No answer was returned for this question. Please try again.',
-      };
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) => [
+        ...prev,
+        answer
+          ? { id: (Date.now() + 1).toString(), sender: 'ai', text: answer }
+          : { id: (Date.now() + 1).toString(), sender: 'error', text: 'The server returned an empty answer.' },
+      ]);
     } catch (err: any) {
+      // Configuration / processing / provider errors are shown as errors, never as an AI answer.
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        sender: 'ai',
-        text: err.message || 'Unable to retrieve insights from the text right now. Please try again.',
+        sender: 'error',
+        text: err?.message || 'The answer could not be generated. Please try again.',
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
@@ -88,10 +91,14 @@ export const AIChat: React.FC = () => {
               )}
 
               <div
-                className={`max-w-[82%] p-2.5 rounded-2xl text-xs leading-relaxed ${
+                role={msg.sender === 'error' ? 'alert' : undefined}
+                data-chat-role={msg.sender}
+                className={`max-w-[82%] p-2.5 rounded-2xl text-xs leading-relaxed whitespace-pre-line ${
                   msg.sender === 'user'
                     ? 'bg-[#2C2421] text-white rounded-tr-xs'
-                    : 'bg-[#FAF7F2] border border-[#E8DFD3] text-[#2C2421] rounded-tl-xs'
+                    : msg.sender === 'error'
+                      ? 'bg-amber-50 border border-amber-200 text-amber-900 rounded-tl-xs'
+                      : 'bg-[#FAF7F2] border border-[#E8DFD3] text-[#2C2421] rounded-tl-xs'
                 }`}
               >
                 {msg.text}

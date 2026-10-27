@@ -706,7 +706,7 @@ async function main() {
       headers: { Authorization: `Bearer ${userToken}` }
     });
     const aiJson = await aiRes.json();
-    assert(aiRes.status === 400 || aiRes.status === 500, 'AI should reject summarization on textless document');
+    assert(aiRes.status === 422, `AI should reject summarization on textless document with 422, got ${aiRes.status}`);
     assert(aiJson.message.includes('readable text') || aiJson.error.includes('readable text'), 'Must return readable text notice');
   });
 

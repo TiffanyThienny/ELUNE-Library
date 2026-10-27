@@ -11,6 +11,7 @@ import { Visibility, BookStatus, BlockType, ProcessingStatus } from '@prisma/cli
 import { canUserAccessBook, resolveBookUploadStatus } from '../utils/permission.util';
 import { presentCoverUrl } from '../utils/coverUrl.util';
 import { uploadIdempotency, isValidClientUploadId } from '../services/uploadIdempotency.service';
+import { ocrService, isOcrSupported } from '../services/ocr.service';
 
 export const formatBookForResponse = (book: any, progress?: any) => {
   let parsedSummary = {
@@ -769,6 +770,62 @@ export const uploadBook = async (req: Request, res: Response): Promise<void> => 
       if (idempotencyKey && req.user) uploadIdempotency.fail(req.user.id, idempotencyKey);
       await discardRequestUploads(req);
     }
+  }
+};
+
+/**
+ * Start (or resume) OCR for a scanned book. Owner or admin only, because it
+ * writes the recognized text to the book's chapters.
+ */
+export const startBookOcr = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const book = await prisma.book.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, fileUrl: true, totalPages: true, uploadedBy: true, visibility: true, status: true, isScanned: true }
+    });
+    if (!book) { sendError(res, 'Book not found', 'NOT_FOUND', 404); return; }
+    if (!req.user || (book.uploadedBy !== req.user.id && req.user.role !== 'ADMIN')) {
+      sendError(res, 'Only the owner of this book can run OCR on it.', 'FORBIDDEN', 403);
+      return;
+    }
+    if (!book.isScanned) {
+      sendError(res, 'This PDF already has a text layer; OCR is not needed.', 'OCR_NOT_NEEDED', 400);
+      return;
+    }
+    const job = await ocrService.start(book);
+    sendSuccess(res, { ocr: job }, 'OCR started', 202);
+  } catch (error: any) {
+    if (error?.statusCode && error.statusCode < 600) {
+      sendError(res, error.message, error.code || 'OCR_ERROR', error.statusCode);
+      return;
+    }
+    console.error('startBookOcr error:', error);
+    sendError(res, 'OCR could not be started.', 'OCR_ERROR', 500);
+  }
+};
+
+/** OCR progress for a book (anyone who may read the book). */
+export const getBookOcrStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const book = await prisma.book.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, visibility: true, status: true, uploadedBy: true, isScanned: true, processingStatus: true, processingError: true, totalPages: true, _count: { select: { chapters: true } } }
+    });
+    if (!book) { sendError(res, 'Book not found', 'NOT_FOUND', 404); return; }
+    if (!canUserAccessBook(book, req.user)) { sendError(res, 'Access denied', 'FORBIDDEN', 403); return; }
+    const job = ocrService.status(book.id);
+    sendSuccess(res, {
+      supported: isOcrSupported(),
+      isScanned: book.isScanned,
+      processingStatus: book.processingStatus,
+      processingError: book.processingError,
+      hasText: book._count.chapters > 0 && book.processingStatus === 'READY',
+      totalPages: book.totalPages,
+      job
+    });
+  } catch (error: any) {
+    console.error('getBookOcrStatus error:', error);
+    sendError(res, 'Failed to read OCR status', 'OCR_ERROR', 500);
   }
 };
 

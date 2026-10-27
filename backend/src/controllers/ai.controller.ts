@@ -15,8 +15,14 @@ export const summarizeBook = async (req: Request, res: Response): Promise<void> 
     const summary = await aiService.summarizeBook(bookId, userId, forceRefresh);
     sendSuccess(res, summary, 'Book summary generated/retrieved successfully');
   } catch (error: any) {
+    // Expected, user-actionable failures (no text / needs OCR / not found) keep
+    // their status and message. Anything else is a generic 500 without internals.
+    if (error?.statusCode && error.statusCode < 500) {
+      sendError(res, error.message, error.code || 'SUMMARY_UNAVAILABLE', error.statusCode);
+      return;
+    }
     console.error('summarizeBook error:', error);
-    sendError(res, 'Failed to summarize book', error.message, 500);
+    sendError(res, 'The summary could not be generated. Please try again.', 'SUMMARY_FAILED', 500);
   }
 };
 
@@ -63,8 +69,12 @@ export const askBookQuestion = async (req: Request, res: Response): Promise<void
     const answer = await aiService.askBookQuestion(bookId, question.trim(), userId);
     sendSuccess(res, { question, answer }, 'AI answer generated successfully');
   } catch (error: any) {
+    if (error?.statusCode) {
+      sendError(res, error.message, error.code || 'QA_FAILED', error.statusCode);
+      return;
+    }
     console.error('askBookQuestion error:', error);
-    sendError(res, 'Failed to generate answer', error.message, 500);
+    sendError(res, 'The answer could not be generated. Please try again.', 'QA_FAILED', 500);
   }
 };
 

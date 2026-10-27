@@ -244,3 +244,266 @@ Note: two earlier runs in this session raced with concurrent test-file edits and
   - deleting a book whose file is already gone
   - traversal refused + repeated delete
 - **Not verified:** a real Postgres failure mode (for example a constraint violation inside the nested create), because the DB suite is still BLOCKED.
+
+---
+
+# Session 5: PDF reading pipeline fixes
+
+Verification (executed sequentially on final code):
+```
+npm --prefix backend run build              # PASS
+npm --prefix frontend run build             # PASS
+cd backend && npx tsx tests/isolated-security-tests.ts   # 102 passed, 0 failed
+cd backend && npx tsx ../frontend/tests/unit-tests.ts    # 25 passed, 0 failed
+```
+End-to-end pipeline test (text-based PDF against real DB, cleaned up after):
+```
+Upload -> 201, READY, isScanned=false, 1 chapter extracted
+Reader -> 200, chapter with content blocks, first block text matches PDF
+AI summary -> 200, extractive fallback from the book's own text
+AI Q&A -> 200, answer quotes the book's content
+File download -> 200, application/pdf, exact bytes match
+```
+
+## Root causes found and fixed
+
+### Mode switching forced PDF regardless of user choice (Issues 3, 5)
+- **Root cause:** `isScannedDocument` was computed independently and OR'd into the
+  render condition `{readerMode === 'pdf' || isScannedDocument ? <PdfVisualReader> : <text>}`.
+  When it was true (e.g. no chapters), BOTH modes showed the PDF reader.
+  A second `useEffect` auto-detected the mode and overrode the user's manual
+  selection on every chapter change.
+- **Fix:** The render condition now uses only `readerMode`. The auto-detection
+  runs once per book (tracked with `lastBookIdRef` and `userSelectedMode`), not
+  on every chapter change. Manual mode buttons set `userSelectedMode = true`.
+- **Files:** `frontend/src/pages/ReaderPage.tsx`
+
+### PDF zoom didn't enlarge the page (Issue 4)
+- **Root cause:** the `<canvas>` had `max-w-full`, which constrained its CSS
+  display width to the container. Zooming increased the canvas resolution but
+  not the visual size.
+- **Fix:** the `maxWidth` style is `none` when zoomed in (scale > 1.2) and
+  `100%` otherwise. The container has `overflow-auto` for scrolling.
+- **Files:** `frontend/src/components/PdfVisualReader.tsx`
+
+### Audio/TTS never played (Issue 6)
+- **Root cause:** `loadChapterAudio` set `audioUrl` to the track's virtual
+  `audioUrl` field (`/audio/stream/bookId/chapterId.mp3`), which has no real
+  audio file behind it. The HTML5 Audio element failed silently. Because
+  `audioUrl` was truthy, the AudioPlayer showed the broken HTML5 player
+  instead of the working Web Speech TTS path.
+- **Fix:** `loadChapterAudio` now sets `audioUrl` to `null` and clears the
+  audio element. The AudioPlayer falls through to the Web Speech TTS path,
+  which reads the chapter's content blocks aloud. Audio segments are kept
+  for potential future use. Switching books cancels speech and resets audio.
+- **Files:** `frontend/src/context/ReaderContext.tsx`
+
+### What was NOT a bug
+The user's uploaded book was a 633-page scanned PDF with no selectable text.
+For that specific book:
+- Text mode correctly shows nothing (no extracted text exists).
+- AI correctly returns "This book does not contain readable text."
+- Audio correctly shows "Audio Unavailable" (no text to read).
+- PDF mode is the only useful mode for scanned PDFs.
+This is honest behaviour, not a bug. A text-based PDF was verified to work
+end-to-end: upload, extraction, reader, AI summary, Q&A and file download.
+
+---
+
+# Session 6: Reader pipeline — progress, summary cache, cover UI
+
+Verification (sequential, final code):
+```
+npm --prefix backend run build              # PASS (exit 0)
+npm --prefix frontend run build             # PASS
+cd backend && npx tsx tests/isolated-security-tests.ts   # 104 passed, 0 failed
+cd backend && npx tsx ../frontend/tests/unit-tests.ts    # 25 passed, 0 failed
+npx oxlint                                  # 0 errors, 88 warnings
+```
+Also verified against the real local `elune` DB with the demo account (read-only
+checks + one progress/bookmark write that is idempotent and non-destructive).
+
+## F-28 · Reading progress stuck at 0% (field-name mismatch)
+- **Root cause (confirmed against real DB):** the reader frontend posts
+  `{ chapterId, contentBlockId, pageNumber, progressPercentage }` to
+  `POST /api/reader/:id/progress`, but `saveReadingProgress` read
+  `currentChapterId / currentContentBlockId / currentPage`. Those were always
+  `undefined`, so `currentPage` stayed at 1 and the chapter/block were never
+  saved. (The other endpoint, `PUT /api/books/:id/progress`, already used the
+  frontend names, so the two disagreed.)
+- **Evidence:** posting `pageNumber: 3` then re-reading returned `currentPage: 1`
+  before the fix; `currentPage: 7` after.
+- **Fix:** `saveReadingProgress` now accepts both naming conventions.
+- **Also:** `debouncedSaveProgress` computes a chapter+block-based percentage
+  when page-based progress is 0 (common for PDFs with many pages but one
+  chapter), so progress advances as the reader moves through paragraphs.
+- **Files:** `backend/src/controllers/reader.controller.ts`, `frontend/src/context/ReaderContext.tsx`
+- **Tests:** isolated ×2 (both endpoints), plus real-DB verification.
+
+## F-29 · Summaries showed the upload description, not the book
+- **Root cause:** `summarizeBook`/`summarizeChapter` cache results in the DB.
+  Summaries generated before the session-3 extractive-fallback fix still held
+  `book.description`. The frontend had no way to request a fresh one.
+- **Evidence:** cached summary `quickOverview` was the "Uploaded volume ..."
+  description; with `?refresh=true` it became the book's real Chapter 1 text
+  (`source: extractive-fallback`).
+- **Fix:** `aiService.summarizeBook/summarizeChapter` take a `refresh` flag; the
+  SummaryPanel regenerate button passes `refresh=true` to bypass the stale cache.
+- **Files:** `frontend/src/services/api.ts`, `frontend/src/components/SummaryPanel.tsx`
+
+## F-30 · Cover upload box could overflow; no preview
+- **Fix:** the cover upload card is `overflow-hidden`, shows a 24×32 preview
+  with the file name (wrapped) once a file is chosen, and a "Remove cover"
+  action. Long names use `break-all`.
+- **Files:** `frontend/src/pages/UploadBookPage.tsx`
+
+## Clarifications (not bugs, confirmed against the real DB)
+- **Cover "missing":** every book in the DB has `coverUrl: null` because no cover
+  was uploaded. BookCard and the detail pages already render the gradient
+  fallback. Uploading a cover now shows a preview and persists.
+- **"Untitled Chapter" / empty text / audio unavailable:** the books showing
+  these are scanned PDFs (`isScanned: true`, 0 chapters, e.g. "Dokumen Scan
+  Fotokopi", "sdvfd"). There is no extractable text, so the honest states are
+  correct. A text-based book ("Sejarah Rahasia Kuno") has 1 chapter with real
+  text, a working summary, Q&A, and now progress — verified end to end.
+
+---
+
+# Session 7: Single PDF reader + summary-narration audio (BROWSER VERIFIED)
+
+This session is the first with **real browser verification**. A CDP harness drives
+the already-installed headless Chrome against the running dev servers — no new
+dependency (Node 24's native WebSocket + Chrome DevTools Protocol).
+
+Verification:
+```
+npm --prefix backend run build              # PASS
+npm --prefix frontend run build             # PASS
+cd backend && npx tsx tests/isolated-security-tests.ts   # 104 passed, 0 failed
+cd backend && npx tsx ../frontend/tests/unit-tests.ts    # 25 passed, 0 failed
+npx oxlint                                  # 0 errors, 84 warnings (was 90)
+node frontend/tests/browser-smoke.mjs       # 9/9 passed (headless Chrome)
+node frontend/tests/browser-audio-check.mjs # summary generated + Listen speaks it
+```
+
+## Product change: one PDF reader (Text/PDF toggle removed)
+- **Why:** the Teks/PDF-Asli toggle was confusing and, as the baseline browser
+  run proved, text-based books defaulted to text mode and never rendered a PDF
+  canvas (`canvas=none`). The toggle "removed" check only "passed" earlier
+  because the whole reader hadn't rendered.
+- **Change:** `ReaderPage` now renders a single `PdfVisualReader`. Removed the
+  mode toggle, the text-blocks rendering path, the font-size controls (only
+  relevant to text mode), and the `isScannedDocument`/`isDummyBlock` branching.
+  Text extraction stays server-side for AI only.
+- **Files:** `frontend/src/pages/ReaderPage.tsx`
+
+## PDF render crash on saved page (BROWSER-CAUGHT)
+- **Root cause:** the saved reading position (`initialPage`) could exceed the
+  loaded PDF's page count, so `doc.getPage(currentPage)` threw
+  "Invalid page request" and the canvas stayed at the empty default (300x150).
+  Found only via the browser console-error capture; builds and unit tests were green.
+- **Fix:** clamp `currentPage` to `[1, doc.numPages]` when the document loads,
+  and clamp again inside the render effect.
+- **Files:** `frontend/src/components/PdfVisualReader.tsx`
+- **After fix (browser):** canvas renders 734x950 (a real page); zoom in 734 -> 826.
+
+## Audio now reads the generated summary (not chapter text)
+- **Change:** `AudioPlayer` was rewritten. It reads `ReaderContext.summaryText`
+  (published by `SummaryPanel`) via the Web Speech API, chunked by sentence,
+  with Listen / Pause / Resume / Stop. It is disabled until a summary exists,
+  stops on book switch and unmount, and shows "Audio Unavailable" only when the
+  browser has no speech engine. No audio file is generated and none is claimed.
+- **Files:** `frontend/src/components/AudioPlayer.tsx`, `frontend/src/components/SummaryPanel.tsx`,
+  `frontend/src/context/ReaderContext.tsx`
+- **Browser-verified:** with instrumented `speechSynthesis.speak`, clicking
+  Listen spoke text starting "Chapter 1: The Hidden" — exactly the on-screen
+  summary. Listen is disabled on a scanned book (no summary).
+
+## Page bookmarks for the PDF reader
+- **Change:** a header "Bookmark" button toggles a bookmark on the current PDF
+  page (`ReaderContext.togglePageBookmark` / `isPageBookmarked`). It reuses the
+  existing bookmark API (anchored to the first content block, storing the real
+  `pageNumber`). Opening a bookmark navigates with `?page=N`; the reader jumps
+  to that page via `setPdfPage`. Verified against the real DB: bookmark persists
+  across refresh.
+
+## New browser test harness (no new dependency)
+- `frontend/tests/browser-smoke.mjs` — 9 checks: boot, login, reader loads,
+  toggle gone, canvas renders, zoom enlarges, summary is real text, audio
+  control present, no console errors.
+- `frontend/tests/browser-audio-check.mjs` — asserts Listen speaks the summary
+  and is disabled without one.
+- Both launch headless Chrome/Edge via CDP over Node's native WebSocket.
+
+---
+
+# Session 8: Full-book summary, summary narration, PDF progress (BROWSER VERIFIED)
+
+Verification (sequential, final code; dev servers running and serving the updated files via Vite HMR):
+```
+npm --prefix backend run build                 # PASS
+npm --prefix frontend run build                # PASS
+cd backend && npx tsx tests/isolated-security-tests.ts   # 104 passed, 0 failed
+cd backend && npx tsx ../frontend/tests/unit-tests.ts    # 27 passed, 0 failed (+2 progress)
+node frontend/tests/browser-reader-check.mjs   # 16/16 (headless Chrome, real backend + local DB)
+node frontend/tests/browser-smoke.mjs          # 9/9
+npx oxlint                                     # 0 errors, 85 warnings
+```
+
+## F-31 · "Failed to summarize book" — root cause
+- Reproduced on the 633-page book "sdvfd": `POST /api/ai/summarize/book/:id` → HTTP 500.
+  Backend log: `This book does not contain readable text`.
+- A read-only probe of the stored PDF: 30 of 633 pages sampled, **0 characters of text,
+  all 30 pages paint raster images**. It is a scanned document with no text layer.
+- No OCR engine exists: no `tesseract`/`ocrmypdf` on PATH, no `tesseract.js`, no `canvas`.
+- The controller turned this expected condition into a generic 500 "Failed to summarize book".
+- Separately, `GEMINI_API_KEY` is a placeholder (checked without printing it), so even
+  text books get the labelled extractive fallback, not an AI summary.
+- **Fix:** a typed 422 `NEEDS_OCR` (or `NO_EXTRACTABLE_TEXT`) with an honest message;
+  other failures return a generic 500 with no internals.
+
+## F-32 · Full-book summary
+- Summarizes **every** chapter (was `take: 6`, 1500 chars each).
+- With Gemini: bounded map-reduce (12,000-char chunks, at most 12, sampled evenly
+  across the whole book), then one combined JSON summary.
+- Without Gemini: an extractive summary sampling sentences across the whole book,
+  tagged `source: 'extractive-fallback'` with a `fallbackReason`. It never falls back
+  to the title or upload description.
+- Cached summaries without a `source` tag (old placeholder logic) are ignored and regenerated.
+- UI: one "Generate Book Summary" button, a regenerate icon, a source label
+  ("AI-generated" vs "Extractive summary — not AI-written"), the "needs OCR" state,
+  and a guard against a late response for a previous book.
+- **Files:** `backend/src/services/ai.service.ts`, `backend/src/controllers/ai.controller.ts`,
+  `frontend/src/components/SummaryPanel.tsx`
+
+## F-33 · Progress stuck at 0% on the PDF
+- **Root cause:** the save effect ran only `if (book && currentChapter)`. A scanned PDF
+  has 0 chapters, so progress was never computed or saved, whatever page you were on.
+  The percentage also updated only inside a 3.5 s debounce, and `onPageChange` fired
+  only after a page render finished (fast navigation cancelled renders).
+- **Fix:**
+  - `progress = floor(page / totalPages × 100)`, clamped 0–100, using the page count
+    reported by pdf.js (`utils/readingProgress.ts`).
+  - The indicator updates immediately. Saves are debounced (1.2 s) and the pending save
+    is flushed, never dropped, on book switch or unmount.
+  - Tracking starts only after the saved position is restored, so the initial load never
+    overwrites it with page 1. Per-book page state is reset on book switch.
+  - `PdfVisualReader` reports every page change immediately with the real page count.
+  - `chapterId` is optional in the progress payload.
+- **Files:** `frontend/src/context/ReaderContext.tsx`, `frontend/src/components/PdfVisualReader.tsx`,
+  `frontend/src/utils/readingProgress.ts` (new), `frontend/src/services/api.ts`
+
+## Browser evidence (`browser-reader-check.mjs`)
+- Scanned book: single summary button; "This PDF needs OCR" message; Listen disabled.
+- Page 18/633 → 2%; Next → 19 → 3%; Prev → 18; jump to 317 → 50%; backend row shows
+  `currentPage: 317, progressPercentage: 50`; after a browser reload page 317 and 50% are
+  restored. The original saved position was restored at the end of the test.
+- Switching to another book starts at that book's own page (1), not 317.
+- Text book: summary built from the book text, labelled `extractive-fallback`; regenerate
+  returns book content; Listen narrates exactly the displayed summary (479 chars).
+
+## Known follow-ups
+- Legacy `run-tests.ts` asserts 400/500 for a text-less summary; it is now 422. Not run
+  (shared DB), so not updated without being able to verify it.
+- OCR for scanned PDFs needs approval (options in `TEST_PLAN.md`).
+- A real AI summary needs a valid `GEMINI_API_KEY` in `backend/.env` (user action).

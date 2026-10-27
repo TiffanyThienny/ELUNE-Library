@@ -549,6 +549,35 @@ async function main() {
     assert(guest.status === 403, `guest expected 403, got ${guest.status}`);
   });
 
+  await runTest('CORE progress: POST /api/reader/:id/progress saves frontend field names (chapterId/pageNumber)', async () => {
+    let saved: any = null;
+    (prisma as any).readingProgress.upsert = async ({ update }: any) => { saved = update; return { ...update, id: 'rp-1' }; };
+    const ch = BOOKS[coreBookId].__chapters[0];
+    const res = await fetch(`${baseUrl}/api/reader/${coreBookId}/progress`, {
+      method: 'POST',
+      headers: { ...auth('u-owner'), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chapterId: ch.id, contentBlockId: ch.contentBlocks[0].id, pageNumber: 3, progressPercentage: 42 })
+    });
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    // The reader frontend uses chapterId/contentBlockId/pageNumber; they must map to the DB columns.
+    assert(saved?.currentPage === 3, `currentPage not saved: ${JSON.stringify(saved)}`);
+    assert(saved?.currentChapterId === ch.id, `currentChapterId not saved: ${JSON.stringify(saved)}`);
+    assert(saved?.currentContentBlockId === ch.contentBlocks[0].id, `currentContentBlockId not saved: ${JSON.stringify(saved)}`);
+    assert(saved?.progressPercentage === 42, `progressPercentage not saved: ${JSON.stringify(saved)}`);
+  });
+
+  await runTest('CORE progress: the book-progress endpoint (current* field names) still works', async () => {
+    let saved: any = null;
+    (prisma as any).readingProgress.upsert = async ({ update }: any) => { saved = update; return { ...update, id: 'rp-2' }; };
+    const res = await fetch(`${baseUrl}/api/books/${coreBookId}/progress`, {
+      method: 'PUT',
+      headers: { ...auth('u-owner'), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentChapterId: 'c1', currentPage: 5, progressPercentage: 50 })
+    });
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(saved?.currentPage === 5 && saved?.progressPercentage === 50, `not saved: ${JSON.stringify(saved)}`);
+  });
+
   await runTest('CORE AI: book summary (non-AI fallback) is built from THIS book\'s text', async () => {
     const res = await fetch(`${baseUrl}/api/ai/summarize/book/${coreBookId}?refresh=true`, { method: 'POST', headers: auth('u-owner') });
     const json: any = await res.json();

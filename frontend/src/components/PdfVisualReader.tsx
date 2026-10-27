@@ -57,7 +57,8 @@ interface PdfVisualReaderProps {
   fileUrl?: string | null;
   totalPages?: number;
   initialPage?: number;
-  onPageChange?: (page: number) => void;
+  /** Called whenever the viewer's page changes, with the PDF's real page count. */
+  onPageChange?: (page: number, totalPages: number) => void;
 }
 
 export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
@@ -157,6 +158,10 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
       }
       pdfDocRef.current = doc;
       setTotalPages(doc.numPages);
+      // Clamp the current page to this document's real range. The saved reading
+      // position (initialPage) may exceed a re-extracted / different page count,
+      // which would make getPage throw "Invalid page request".
+      setCurrentPage((p) => Math.min(Math.max(1, p), doc.numPages));
       setLoading(false);
     } catch (err: any) {
       if (loadSeq !== loadSeqRef.current) return;
@@ -183,6 +188,15 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
     };
   }, [bookId, fileUrl, userId]);
 
+  // Report every real page change immediately (independent of whether the page
+  // render finishes or is cancelled by a quicker navigation).
+  const onPageChangeRef = useRef(onPageChange);
+  onPageChangeRef.current = onPageChange;
+  useEffect(() => {
+    if (loading || !pdfDocRef.current) return;
+    onPageChangeRef.current?.(currentPage, pdfDocRef.current.numPages);
+  }, [currentPage, loading]);
+
   // Render Page on Canvas
   useEffect(() => {
     if (!pdfDocRef.current || loading) return;
@@ -196,7 +210,9 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
           renderTaskRef.current.cancel();
         }
 
-        const page = await pdfDocRef.current.getPage(currentPage);
+        const doc = pdfDocRef.current;
+        const pageNum = Math.min(Math.max(1, currentPage), doc.numPages || 1);
+        const page = await doc.getPage(pageNum);
         if (isCancelled) return;
 
         const canvas = canvasRef.current;
@@ -220,9 +236,6 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
         await renderTask.promise;
         if (!isCancelled) {
           setRendering(false);
-          if (onPageChange) {
-            onPageChange(currentPage);
-          }
         }
       } catch (err: any) {
         if (err.name !== 'RenderingCancelledException') {
@@ -419,7 +432,8 @@ export const PdfVisualReader: React.FC<PdfVisualReaderProps> = ({
 
         <canvas
           ref={canvasRef}
-          className="rounded-xl shadow-lg border border-black/10 bg-white max-w-full transition-transform"
+          className="rounded-xl shadow-lg border border-black/10 bg-white transition-transform"
+          style={{ maxWidth: scale > 1.2 ? 'none' : '100%' }}
         />
       </div>
 

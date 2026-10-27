@@ -141,7 +141,12 @@ export const saveReadingProgress = async (req: Request, res: Response): Promise<
       return;
     }
 
-    const { currentChapterId, currentContentBlockId, currentPage, progressPercentage } = req.body;
+    // Accept both naming conventions. The reader frontend sends chapterId /
+    // contentBlockId / pageNumber; the book-progress endpoint uses the current* names.
+    const currentChapterId = req.body.currentChapterId ?? req.body.chapterId;
+    const currentContentBlockId = req.body.currentContentBlockId ?? req.body.contentBlockId;
+    const currentPage = req.body.currentPage ?? req.body.pageNumber;
+    const { progressPercentage } = req.body;
 
     const progress = await prisma.readingProgress.upsert({
       where: {
