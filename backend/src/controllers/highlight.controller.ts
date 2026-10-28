@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { ensureBookAccess } from '../utils/bookAccess.util';
 
 export const getHighlights = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -53,6 +54,8 @@ export const createHighlight = async (req: Request, res: Response): Promise<void
       sendError(res, 'bookId is required', 'VALIDATION_ERROR', 400);
       return;
     }
+
+    if (!(await ensureBookAccess(req, res, bookId))) return;
 
     const firstChapter = await prisma.chapter.findFirst({ where: { bookId }, include: { contentBlocks: { take: 1 } } });
     const targetChapterId = chapterId || firstChapter?.id;

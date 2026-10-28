@@ -1020,6 +1020,19 @@ export const getBookProgress = async (req: Request, res: Response): Promise<void
       return;
     }
 
+    const book = await prisma.book.findUnique({
+      where: { id },
+      select: { id: true, visibility: true, status: true, uploadedBy: true }
+    });
+    if (!book) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied', 'FORBIDDEN', 403);
+      return;
+    }
+
     const progress = await prisma.readingProgress.findUnique({
       where: { userId_bookId: { userId: req.user.id, bookId: id } },
     });
@@ -1042,24 +1055,43 @@ export const saveBookProgress = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const { currentChapterId, currentContentBlockId, currentPage, progressPercentage } = req.body;
+    const book = await prisma.book.findUnique({
+      where: { id },
+      select: { id: true, visibility: true, status: true, uploadedBy: true, totalPages: true }
+    });
+    if (!book) {
+      sendError(res, 'Book not found', 'NOT_FOUND', 404);
+      return;
+    }
+    if (!canUserAccessBook(book, req.user)) {
+      sendError(res, 'Access denied', 'FORBIDDEN', 403);
+      return;
+    }
+
+    const currentChapterId = req.body.currentChapterId ?? req.body.chapterId;
+    const currentContentBlockId = req.body.currentContentBlockId ?? req.body.contentBlockId;
+    const currentPage = req.body.currentPage ?? req.body.pageNumber;
+    let { progressPercentage } = req.body;
+    if (progressPercentage === undefined && currentPage && book.totalPages) {
+      progressPercentage = Math.min(100, Math.max(0, Math.floor((Number(currentPage) / book.totalPages) * 100)));
+    }
 
     const progress = await prisma.readingProgress.upsert({
       where: { userId_bookId: { userId: req.user.id, bookId: id } },
       update: {
-        currentChapterId,
-        currentContentBlockId,
-        currentPage: currentPage || 1,
-        progressPercentage: progressPercentage || 0,
+        currentChapterId: currentChapterId || undefined,
+        currentContentBlockId: currentContentBlockId || undefined,
+        currentPage: currentPage ? Number(currentPage) : 1,
+        progressPercentage: progressPercentage !== undefined ? Number(progressPercentage) : 0,
         lastReadAt: new Date(),
       },
       create: {
         userId: req.user.id,
         bookId: id,
-        currentChapterId,
-        currentContentBlockId,
-        currentPage: currentPage || 1,
-        progressPercentage: progressPercentage || 0,
+        currentChapterId: currentChapterId || null,
+        currentContentBlockId: currentContentBlockId || null,
+        currentPage: currentPage ? Number(currentPage) : 1,
+        progressPercentage: progressPercentage !== undefined ? Number(progressPercentage) : 0,
       },
     });
 
@@ -1075,9 +1107,9 @@ export const saveBookProgress = async (req: Request, res: Response): Promise<voi
  */
 export const getBookAudio = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const bookId = req.params.id || req.params.bookId;
 
-    const book = await prisma.book.findUnique({ where: { id } });
+    const book = await prisma.book.findUnique({ where: { id: bookId } });
     if (!book) {
       sendError(res, 'Book not found', 'NOT_FOUND', 404);
       return;
@@ -1089,7 +1121,7 @@ export const getBookAudio = async (req: Request, res: Response): Promise<void> =
     }
 
     const tracks = await prisma.audioTrack.findMany({
-      where: { bookId: id },
+      where: { bookId: bookId },
       include: {
         segments: {
           orderBy: { startTime: 'asc' },
@@ -1109,10 +1141,10 @@ export const getBookAudio = async (req: Request, res: Response): Promise<void> =
  */
 export const generateBookAudio = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const bookId = req.params.id || req.params.bookId;
 
     const book = await prisma.book.findUnique({
-      where: { id },
+      where: { id: bookId },
       include: {
         chapters: {
           orderBy: { chapterNumber: 'asc' },

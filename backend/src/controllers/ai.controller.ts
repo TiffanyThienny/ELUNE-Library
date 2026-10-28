@@ -42,8 +42,12 @@ export const summarizeChapter = async (req: Request, res: Response): Promise<voi
     const summary = await aiService.summarizeChapter(chapterId, userId, forceRefresh);
     sendSuccess(res, summary, 'Chapter summary generated/retrieved successfully');
   } catch (error: any) {
+    if (error?.statusCode && error.statusCode < 500) {
+      sendError(res, error.message, error.code || 'SUMMARY_UNAVAILABLE', error.statusCode);
+      return;
+    }
     console.error('summarizeChapter error:', error);
-    sendError(res, 'Failed to summarize chapter', error.message, 500);
+    sendError(res, 'The chapter summary could not be generated. Please try again.', 'SUMMARY_FAILED', 500);
   }
 };
 
@@ -88,6 +92,8 @@ export const getBookChatHistory = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    if (!(await ensureBookAccess(req, res, bookId))) return;
+
     const chats = await prisma.aIChat.findMany({
       where: { userId, bookId },
       orderBy: { createdAt: 'asc' },
@@ -111,6 +117,10 @@ export const generateFlashcards = async (req: Request, res: Response): Promise<v
     const flashcards = await aiService.generateFlashcards(bookId, userId);
     sendSuccess(res, { flashcards }, 'Flashcards generated successfully');
   } catch (error: any) {
+    if (error?.statusCode && error.statusCode < 500) {
+      sendError(res, error.message, error.code || 'FLASHCARDS_UNAVAILABLE', error.statusCode);
+      return;
+    }
     console.error('generateFlashcards error:', error);
     sendError(res, 'Failed to generate flashcards', error.message, 500);
   }
@@ -144,6 +154,10 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
     const quiz = await aiService.generateQuiz(bookId, userId);
     sendSuccess(res, { quiz }, 'Quiz generated successfully');
   } catch (error: any) {
+    if (error?.statusCode && error.statusCode < 500) {
+      sendError(res, error.message, error.code || 'QUIZ_UNAVAILABLE', error.statusCode);
+      return;
+    }
     console.error('generateQuiz error:', error);
     sendError(res, 'Failed to generate quiz', error.message, 500);
   }
@@ -190,6 +204,10 @@ export const generateMindMap = async (req: Request, res: Response): Promise<void
     const mindmap = await aiService.generateMindMap(bookId);
     sendSuccess(res, mindmap, 'Mind map generated successfully');
   } catch (error: any) {
+    if (error?.statusCode && error.statusCode < 500) {
+      sendError(res, error.message, error.code || 'MINDMAP_UNAVAILABLE', error.statusCode);
+      return;
+    }
     console.error('generateMindMap error:', error);
     sendError(res, 'Failed to generate mind map', error.message, 500);
   }

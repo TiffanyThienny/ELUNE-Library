@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
 import { canUserAccessBook } from '../utils/permission.util';
 import { presentCoverUrl } from '../utils/coverUrl.util';
+import { ensureBookAccess } from '../utils/bookAccess.util';
 
 export const getReaderData = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -140,6 +141,8 @@ export const saveReadingProgress = async (req: Request, res: Response): Promise<
       sendError(res, 'Authentication required to save progress', 'UNAUTHORIZED', 401);
       return;
     }
+
+    if (!(await ensureBookAccess(req, res, bookId))) return;
 
     // Accept both naming conventions. The reader frontend sends chapterId /
     // contentBlockId / pageNumber; the book-progress endpoint uses the current* names.

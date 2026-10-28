@@ -161,7 +161,7 @@ export class AIService {
       throw Object.assign(
         new Error(
           book.isScanned
-            ? 'This PDF is a scanned document without a text layer. Run text recognition (OCR) on it first, then generate the summary.'
+            ? 'This PDF is a scanned document without a readable text layer. Run text recognition (OCR) on it first, then generate the summary.'
             : 'No readable text was extracted from this book, so a summary cannot be generated.'
         ),
         { statusCode: 422, code: book.isScanned ? 'NEEDS_OCR' : 'NO_EXTRACTABLE_TEXT' }
@@ -268,7 +268,14 @@ ${partials.map((p, i) => `[Part ${i + 1}] ${p}`).join('\n\n')}`);
 
     const chapterText = chapter.contentBlocks.map((b) => b.text).join('\n\n');
     if (!chapterText || chapterText.trim().length === 0 || chapterText.includes('could not be converted into readable text')) {
-      throw new Error('This chapter does not contain readable text for summarization.');
+      throw Object.assign(
+        new Error(
+          chapter.book?.isScanned
+            ? 'This chapter belongs to a scanned document without a readable text layer. Run OCR on it first, then generate the summary.'
+            : 'This chapter does not contain readable text for summarization.'
+        ),
+        { statusCode: 422, code: chapter.book?.isScanned ? 'NEEDS_OCR' : 'NO_EXTRACTABLE_TEXT' }
+      );
     }
 
     let result: { summary: string; keyPoints: string[] };
@@ -342,10 +349,16 @@ ${chapterText.slice(0, 5000)}`;
     }
 
     if (!this.isGeminiConfigured() || !this.genAI) {
-      throw Object.assign(
-        new Error('AI is not configured on the server. Set GEMINI_API_KEY in backend/.env and restart the backend.'),
-        { statusCode: 503, code: 'AI_NOT_CONFIGURED' }
-      );
+      const answer = this.generateFallbackAnswer(book, question, passages.map((p) => p.text).join('\n\n'));
+      await prisma.aIChat.create({
+        data: {
+          userId,
+          bookId,
+          question,
+          answer
+        }
+      });
+      return answer;
     }
 
     const context = passages.map((p) => `[Page ${p.pageNumber}] ${p.text}`).join('\n\n');

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendSuccess, sendError } from '../utils/response.util';
+import { ensureBookAccess } from '../utils/bookAccess.util';
 
 export const getProgress = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -11,6 +12,8 @@ export const getProgress = async (req: Request, res: Response): Promise<void> =>
       sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
       return;
     }
+
+    if (!(await ensureBookAccess(req, res, bookId))) return;
 
     const progress = await prisma.readingProgress.findUnique({
       where: {
@@ -47,12 +50,17 @@ export const updateProgress = async (req: Request, res: Response): Promise<void>
   try {
     const userId = req.user?.id;
     const { bookId } = req.params;
-    const { currentPage, currentChapterId, currentContentBlockId, progressPercentage } = req.body;
-
     if (!userId) {
       sendError(res, 'Authentication required', 'UNAUTHORIZED', 401);
       return;
     }
+
+    if (!(await ensureBookAccess(req, res, bookId))) return;
+
+    const currentChapterId = req.body.currentChapterId ?? req.body.chapterId;
+    const currentContentBlockId = req.body.currentContentBlockId ?? req.body.contentBlockId;
+    const currentPage = req.body.currentPage ?? req.body.pageNumber;
+    const { progressPercentage } = req.body;
 
     const progress = await prisma.readingProgress.upsert({
       where: {

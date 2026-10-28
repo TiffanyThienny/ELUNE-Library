@@ -166,7 +166,13 @@ function installPrismaStubs(prisma: any) {
   prisma.quiz.createMany = async () => ({ count: 0 });
   prisma.quiz.deleteMany = async () => ({ count: 0 });
   prisma.aIChat.create = async ({ data }: any) => data;
-  prisma.contentBlock.findMany = async () => [{ id: 'cb-1', text: SECRET_TEXT, chapter: { title: 'Secret chapter', chapterNumber: 1 } }];
+  prisma.contentBlock.findMany = async ({ where }: any = {}) => {
+    const bookId = where?.chapter?.bookId;
+    if (bookId && BOOKS[bookId]?.__chapters) {
+      return BOOKS[bookId].__chapters.flatMap((c: any) => c.contentBlocks || []);
+    }
+    return [{ id: 'cb-1', text: SECRET_TEXT, pageNumber: 1, chapter: { title: 'Secret chapter', chapterNumber: 1 } }];
+  };
   prisma.audioTrack.findFirst = async ({ where }: any) => ({
     id: 'at-1', bookId: where.bookId, chapterId: where.chapterId, audioUrl: '/audio/x.mp3', duration: 3,
     segments: [{ id: 's1', contentBlockId: 'cb-1', startTime: 0, endTime: 3, contentBlock: { id: 'cb-1', blockIndex: 1, pageNumber: 1, text: SECRET_TEXT } }]
